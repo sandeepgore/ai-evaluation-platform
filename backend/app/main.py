@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 from app.config.settings import settings
 from app.db.session import AsyncSessionLocal
-
+from app.api.router import api_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -12,6 +12,7 @@ app = FastAPI(
     version=settings.app_version,
 )
 
+app.include_router(api_router)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
