@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -9,27 +10,161 @@ from app.models.model import Model
 from app.services.dataset_case import DatasetCaseService
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation_results import EvaluationResultService
+from app.services.evaluators import Evaluator, EvaluatorRegistry
 from app.services.model_gateway import ModelGateway
+from app.services.scoring import ScoringService
 
 
 class EvaluationEngine:
     """
     Orchestrates the execution of an EvaluationRun.
 
-    The engine is responsible for coordinating:
-        EvaluationRun
-            -> DatasetCases
-            -> ModelGateway
-            -> EvaluationResults
+    EvaluationRun
+        -> DatasetCases
+        -> ModelGateway
+        -> EvaluatorRegistry
+        -> ScoringService
+        -> EvaluationResults
     """
 
     def __init__(
         self,
         db: AsyncSession,
         model_gateway: ModelGateway,
+        evaluator_registry: EvaluatorRegistry,
+        scoring_service: ScoringService,
     ) -> None:
         self.db = db
         self.model_gateway = model_gateway
+        self.evaluator_registry = evaluator_registry
+        self.scoring_service = scoring_service
+
+    def _get_evaluators(
+        self,
+        run: EvaluationRun,
+    ) -> list[tuple[Evaluator, float]]:
+        """
+        Resolve evaluators configured for the evaluation run.
+
+        Supported formats:
+
+        Legacy:
+        {
+            "evaluators": [
+                "exact_match",
+                "contains"
+            ]
+        }
+
+        Weighted:
+        {
+            "evaluators": [
+                {
+                    "name": "exact_match",
+                    "weight": 0.5
+                },
+                {
+                    "name": "contains",
+                    "weight": 0.5
+                }
+            ]
+        }
+
+        Legacy evaluator names receive a default weight of 1.0.
+
+        The evaluator weights are retained for backward compatibility,
+        but score aggregation is delegated to ScoringService.
+        """
+
+        evaluator_config: Any = ["exact_match"]
+
+        if run.configuration:
+            configured_evaluators = run.configuration.get("evaluators")
+
+            if configured_evaluators:
+                evaluator_config = configured_evaluators
+
+        if not isinstance(evaluator_config, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="'evaluators' must be a list.",
+            )
+
+        evaluators: list[tuple[Evaluator, float]] = []
+        evaluator_names: set[str] = set()
+
+        for item in evaluator_config:
+            if isinstance(item, str):
+                evaluator_name = item
+                weight = 1.0
+
+            elif isinstance(item, dict):
+                evaluator_name = item.get("name")
+                weight = item.get("weight", 1.0)
+
+                if not isinstance(evaluator_name, str):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Each evaluator configuration must contain "
+                            "a string 'name'."
+                        ),
+                    )
+
+                if not isinstance(weight, (int, float)):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Weight for evaluator '{evaluator_name}' "
+                            "must be a number."
+                        ),
+                    )
+
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Each evaluator must be either a string "
+                        "or an object containing 'name' and 'weight'."
+                    ),
+                )
+
+            if evaluator_name in evaluator_names:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Evaluator '{evaluator_name}' "
+                        "is configured more than once."
+                    ),
+                )
+
+            if weight <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Weight for evaluator '{evaluator_name}' "
+                        "must be greater than zero."
+                    ),
+                )
+
+            try:
+                evaluator = self.evaluator_registry.get(evaluator_name)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
+
+            evaluator_names.add(evaluator_name)
+            evaluators.append((evaluator, float(weight)))
+
+        if not evaluators:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one evaluator must be configured.",
+            )
+
+        return evaluators
 
     async def execute(
         self,
@@ -77,7 +212,13 @@ class EvaluationEngine:
             )
 
         # ---------------------------------------------------------
-        # 3. Validate associated model
+        # 3. Resolve evaluators
+        # ---------------------------------------------------------
+
+        evaluator_configs = self._get_evaluators(run)
+
+        # ---------------------------------------------------------
+        # 4. Validate associated model
         # ---------------------------------------------------------
 
         model_result = await self.db.execute(
@@ -96,7 +237,7 @@ class EvaluationEngine:
             )
 
         # ---------------------------------------------------------
-        # 4. Load dataset cases
+        # 5. Load dataset cases
         # ---------------------------------------------------------
 
         cases = await DatasetCaseService.list(
@@ -104,7 +245,6 @@ class EvaluationEngine:
             run.dataset_version_id,
         )
 
-        # Keep the run count synchronized with the actual cases.
         run.total_cases = len(cases)
         run.completed_cases = 0
         run.failed_cases = 0
@@ -114,7 +254,7 @@ class EvaluationEngine:
         await self.db.refresh(run)
 
         # ---------------------------------------------------------
-        # 5. Execute each case
+        # 6. Execute each case
         # ---------------------------------------------------------
 
         for case in cases:
@@ -123,7 +263,7 @@ class EvaluationEngine:
                 # Build model configuration
                 # -------------------------------------------------
 
-                configuration = {}
+                configuration: dict[str, Any] = {}
 
                 if model.configuration:
                     configuration.update(model.configuration)
@@ -131,7 +271,6 @@ class EvaluationEngine:
                 if run.configuration:
                     configuration.update(run.configuration)
 
-                # Preserve the database model information.
                 configuration.setdefault(
                     "model",
                     model.model_identifier,
@@ -147,6 +286,62 @@ class EvaluationEngine:
                 )
 
                 # -------------------------------------------------
+                # Run all evaluators
+                # -------------------------------------------------
+
+                scores: dict[str, dict[str, Any]] = {}
+                feedback_messages: list[str] = []
+
+                for evaluator, _weight in evaluator_configs:
+                    evaluation_score = await evaluator.evaluate(
+                        expected_output=case.expected_output,
+                        actual_output=response.output,
+                    )
+
+                    scores[evaluation_score.metric] = {
+                        "score": evaluation_score.score,
+                        "metadata": evaluation_score.metadata,
+                    }
+
+                    if evaluation_score.feedback:
+                        feedback_messages.append(
+                            f"{evaluation_score.metric}: "
+                            f"{evaluation_score.feedback}"
+                        )
+
+                # -------------------------------------------------
+                # Calculate overall score
+                # -------------------------------------------------
+
+                scoring_configuration = {}
+
+                if run.configuration:
+                    scoring_configuration = run.configuration.get(
+                        "scoring",
+                        {},
+                    )
+
+                scoring_result = self.scoring_service.calculate(
+                    scores=scores,
+                    configuration=scoring_configuration,
+                )
+
+                scores["overall"] = {
+                    "score": scoring_result.score,
+                    "metadata": scoring_result.metadata,
+                }
+
+                # -------------------------------------------------
+                # Build feedback
+                # -------------------------------------------------
+
+                feedback = (
+                    "\n".join(feedback_messages)
+                    if feedback_messages
+                    else None
+                )
+
+                # -------------------------------------------------
                 # Persist successful result
                 # -------------------------------------------------
 
@@ -157,8 +352,8 @@ class EvaluationEngine:
                     status="completed",
                     actual_output=response.output,
                     expected_output=case.expected_output,
-                    scores={},
-                    feedback=None,
+                    scores=scores,
+                    feedback=feedback,
                     trace=response.trace,
                     latency_ms=int(response.latency_ms),
                     input_tokens=response.input_tokens,
@@ -201,7 +396,7 @@ class EvaluationEngine:
             await self.db.refresh(run)
 
         # ---------------------------------------------------------
-        # 6. Complete the evaluation run
+        # 7. Complete evaluation run
         # ---------------------------------------------------------
 
         run.status = EvaluationRunStatus.COMPLETED
