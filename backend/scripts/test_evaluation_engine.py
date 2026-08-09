@@ -3,25 +3,30 @@ from uuid import UUID
 
 from app.db.session import AsyncSessionLocal
 from app.services.evaluation_engine import EvaluationEngine
+from app.services.evaluators import create_default_registry
 from app.services.model_gateway import MockModelProvider
-from backend.app.services.evaluators.exact_match import ExactMatchEvaluator
+from app.services.scoring import ScoringService
 
-
-RUN_ID = UUID("530a3848-9929-4ab9-9792-e30d0a8e1e8b")
+RUN_ID = UUID("f7ef0caf-3daa-4a84-810b-3753d47e76eb")
 
 
 async def main():
+    evaluator_registry = create_default_registry()
+
+    print("Available evaluators:")
+    print(evaluator_registry.list())
+
     async with AsyncSessionLocal() as db:
         engine = EvaluationEngine(
             db=db,
             model_gateway=MockModelProvider(),
-            evaluators=[
-                ExactMatchEvaluator(),
-            ],
+            evaluator_registry=evaluator_registry,
+            scoring_service=ScoringService(),
         )
 
         run = await engine.execute(RUN_ID)
 
+        print()
         print("Evaluation execution completed")
         print(f"Run ID: {run.id}")
         print(f"Status: {run.status}")
