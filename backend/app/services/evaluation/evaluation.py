@@ -11,15 +11,68 @@ from app.schemas.evaluation import EvaluationRunCreate, EvaluationRunUpdate
 
 class EvaluationRunService:
     @staticmethod
+    def validate_status_transition(
+        current_status: EvaluationRunStatus,
+        new_status: EvaluationRunStatus,
+    ) -> bool:
+        """
+        Validate whether an evaluation run can transition
+        from the current status to the new status.
+
+        Terminal states:
+            COMPLETED
+            FAILED
+            CANCELLED
+
+        Valid transitions:
+            PENDING   -> RUNNING
+            PENDING   -> CANCELLED
+            RUNNING   -> COMPLETED
+            RUNNING   -> FAILED
+            RUNNING   -> CANCELLED
+
+        Re-applying the same status is allowed.
+        """
+
+        if current_status == new_status:
+            return True
+
+        allowed_transitions = {
+            EvaluationRunStatus.PENDING: {
+                EvaluationRunStatus.RUNNING,
+                EvaluationRunStatus.CANCELLED,
+            },
+            EvaluationRunStatus.RUNNING: {
+                EvaluationRunStatus.COMPLETED,
+                EvaluationRunStatus.FAILED,
+                EvaluationRunStatus.CANCELLED,
+            },
+            EvaluationRunStatus.COMPLETED: set(),
+            EvaluationRunStatus.FAILED: set(),
+            EvaluationRunStatus.CANCELLED: set(),
+        }
+
+        allowed_statuses = allowed_transitions.get(
+            current_status,
+            set(),
+        )
+
+        if new_status not in allowed_statuses:
+            raise ValueError(
+                f"Invalid evaluation run status transition: "
+                f"{current_status.value} -> {new_status.value}"
+            )
+
+        return True
+
+    @staticmethod
     async def create(
         db: AsyncSession,
         data: EvaluationRunCreate,
     ) -> EvaluationRun:
         # Verify dataset version exists
         dataset_version_result = await db.execute(
-            select(DatasetVersion).where(
-                DatasetVersion.id == data.dataset_version_id
-            )
+            select(DatasetVersion).where(DatasetVersion.id == data.dataset_version_id)
         )
         dataset_version = dataset_version_result.scalar_one_or_none()
 
@@ -27,9 +80,7 @@ class EvaluationRunService:
             raise ValueError("Dataset version not found")
 
         # Verify model exists
-        model_result = await db.execute(
-            select(Model).where(Model.id == data.model_id)
-        )
+        model_result = await db.execute(select(Model).where(Model.id == data.model_id))
         model = model_result.scalar_one_or_none()
 
         if model is None:
@@ -59,11 +110,7 @@ class EvaluationRunService:
         db: AsyncSession,
         run_id: UUID,
     ) -> EvaluationRun | None:
-        result = await db.execute(
-            select(EvaluationRun).where(
-                EvaluationRun.id == run_id
-            )
-        )
+        result = await db.execute(select(EvaluationRun).where(EvaluationRun.id == run_id))
 
         return result.scalar_one_or_none()
 
@@ -76,14 +123,10 @@ class EvaluationRunService:
         query = select(EvaluationRun)
 
         if dataset_version_id is not None:
-            query = query.where(
-                EvaluationRun.dataset_version_id == dataset_version_id
-            )
+            query = query.where(EvaluationRun.dataset_version_id == dataset_version_id)
 
         if model_id is not None:
-            query = query.where(
-                EvaluationRun.model_id == model_id
-            )
+            query = query.where(EvaluationRun.model_id == model_id)
 
         query = query.order_by(EvaluationRun.created_at.desc())
 
@@ -98,6 +141,12 @@ class EvaluationRunService:
         data: EvaluationRunUpdate,
     ) -> EvaluationRun:
         update_data = data.model_dump(exclude_unset=True)
+
+        if "status" in update_data:
+            EvaluationRunService.validate_status_transition(
+                run.status,
+                update_data["status"],
+            )
 
         for field, value in update_data.items():
             setattr(run, field, value)
