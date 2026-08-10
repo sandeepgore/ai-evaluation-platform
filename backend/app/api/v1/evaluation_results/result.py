@@ -18,7 +18,6 @@ router = APIRouter(
 )
 
 
-
 @router.get(
     "/{result_id}",
     response_model=EvaluationResultResponse,
@@ -53,8 +52,6 @@ async def list_evaluation_results(
         db,
         evaluation_run_id,
     )
-
-
 
 
 @router.delete(

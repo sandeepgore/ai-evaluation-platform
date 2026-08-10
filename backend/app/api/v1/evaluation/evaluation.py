@@ -9,8 +9,12 @@ from app.schemas.evaluation import (
     EvaluationRunResponse,
     EvaluationRunUpdate,
 )
+from app.services.evaluation_engine.summary import EvaluationRunSummaryService
 from app.services.evaluation import EvaluationRunService
-
+from app.services.evaluation_engine.engine import EvaluationEngine
+from app.services.model_gateway import MockModelProvider
+from app.services.evaluators import create_default_registry
+from app.services.scoring import ScoringService
 
 router = APIRouter(
     prefix="/evaluation-runs",
@@ -108,3 +112,39 @@ async def delete_evaluation_run(
         )
 
     await EvaluationRunService.delete(db, run)
+
+@router.get(
+    "/{run_id}/summary",
+    response_model=dict,
+)
+async def get_evaluation_run_summary(
+    run_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    summary = await EvaluationRunSummaryService.calculate(
+        db,
+        run_id,
+    )
+
+    return summary
+
+@router.post(
+    "/{run_id}/execute",
+    response_model=EvaluationRunResponse,
+)
+async def execute_evaluation_run(
+    run_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    model_gateway = MockModelProvider()
+    evaluator_registry = create_default_registry()
+    scoring_service = ScoringService()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    return await engine.execute(run_id)
