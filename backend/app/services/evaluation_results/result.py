@@ -11,7 +11,6 @@ from app.schemas.evaluation_results import (
 
 
 class EvaluationResultService:
-
     @staticmethod
     async def create(
         db: AsyncSession,
@@ -59,31 +58,6 @@ class EvaluationResultService:
     ) -> EvaluationResult | None:
         result = await db.get(EvaluationResult, result_id)
         return result
-
-    @staticmethod
-    async def list_by_run(
-        db: AsyncSession,
-        evaluation_run_id: UUID,
-    ) -> EvaluationResultListResponse:
-        query = (
-            select(EvaluationResult)
-            .where(
-                EvaluationResult.evaluation_run_id == evaluation_run_id,
-                EvaluationResult.is_active.is_(True),
-            )
-            .order_by(EvaluationResult.created_at.asc())
-        )
-
-        result = await db.execute(query)
-        items = result.scalars().all()
-
-        return EvaluationResultListResponse(
-            items=[
-                EvaluationResultResponse.model_validate(item)
-                for item in items
-            ],
-            total=len(items),
-        )
 
     @staticmethod
     async def update(
@@ -139,3 +113,41 @@ class EvaluationResultService:
             "failed": row.failed,
             "pending": row.pending,
         }
+
+    @staticmethod
+    async def list_by_run(
+        db: AsyncSession,
+        evaluation_run_id: UUID,
+        *,
+        status_filter: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> EvaluationResultListResponse:
+        conditions = [
+            EvaluationResult.evaluation_run_id == evaluation_run_id,
+            EvaluationResult.is_active.is_(True),
+        ]
+
+        if status_filter is not None:
+            conditions.append(EvaluationResult.status == status_filter)
+
+        total_query = select(func.count(EvaluationResult.id)).where(*conditions)
+
+        total_result = await db.execute(total_query)
+        total = total_result.scalar_one()
+
+        query = (
+            select(EvaluationResult)
+            .where(*conditions)
+            .order_by(EvaluationResult.created_at.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+
+        result = await db.execute(query)
+        items = result.scalars().all()
+
+        return EvaluationResultListResponse(
+            items=[EvaluationResultResponse.model_validate(item) for item in items],
+            total=total,
+        )

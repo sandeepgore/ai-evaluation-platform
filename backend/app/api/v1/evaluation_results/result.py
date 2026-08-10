@@ -19,6 +19,50 @@ router = APIRouter(
 
 
 @router.get(
+    "",
+    response_model=EvaluationResultListResponse,
+)
+async def list_evaluation_results(
+    evaluation_run_id: UUID = Query(...),
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=500,
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    return await EvaluationResultService.list_by_run(
+        db,
+        evaluation_run_id,
+        status_filter=status_filter,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/run/{evaluation_run_id}/statistics",
+    response_model=EvaluationResultStatisticsResponse,
+)
+async def get_evaluation_run_statistics(
+    evaluation_run_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    return await EvaluationResultService.get_run_statistics(
+        db,
+        evaluation_run_id,
+    )
+
+
+@router.get(
     "/{result_id}",
     response_model=EvaluationResultResponse,
 )
@@ -38,20 +82,6 @@ async def get_evaluation_result(
         )
 
     return result
-
-
-@router.get(
-    "",
-    response_model=EvaluationResultListResponse,
-)
-async def list_evaluation_results(
-    evaluation_run_id: UUID = Query(...),
-    db: AsyncSession = Depends(get_db),
-):
-    return await EvaluationResultService.list_by_run(
-        db,
-        evaluation_run_id,
-    )
 
 
 @router.delete(
@@ -77,18 +107,3 @@ async def delete_evaluation_result(
         db,
         result,
     )
-
-
-@router.get(
-    "/run/{evaluation_run_id}/statistics",
-    response_model=EvaluationResultStatisticsResponse,
-)
-async def get_evaluation_run_statistics(
-    evaluation_run_id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    return await EvaluationResultService.get_run_statistics(
-        db,
-        evaluation_run_id,
-    )
-

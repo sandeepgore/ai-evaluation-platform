@@ -11,6 +11,7 @@ from app.models.base import TimestampMixin
 
 
 class ModelProvider(str, Enum):
+    MOCK = "mock"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
