@@ -10,7 +10,7 @@ class MockModelProvider(ModelGateway):
     Mock model provider used for local development and testing.
 
     This provider does not call an external LLM.
-    It generates a deterministic response so that the
+    It generates deterministic responses so that the
     evaluation pipeline can be tested end-to-end.
     """
 
@@ -49,4 +49,22 @@ class MockModelProvider(ModelGateway):
                     "mock-model-v1",
                 ),
             },
+        )
+
+    async def generate_batch(
+        self,
+        *,
+        prompts: list[str],
+        configuration: dict[str, Any] | None = None,
+    ) -> list[ModelResponse]:
+        """
+        Generate responses for multiple prompts concurrently.
+
+        The mock provider uses the base concurrency semantics while
+        preserving the input order.
+        """
+
+        return await super().generate_batch(
+            prompts=prompts,
+            configuration=configuration,
         )

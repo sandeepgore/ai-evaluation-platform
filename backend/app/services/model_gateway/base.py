@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -21,12 +22,34 @@ class ModelGateway(ABC):
     ) -> ModelResponse:
         """
         Generate a response from the configured model provider.
-
-        Args:
-            prompt: Input prompt sent to the model.
-            configuration: Provider/model-specific configuration.
-
-        Returns:
-            A standardized ModelResponse.
         """
         raise NotImplementedError
+
+    async def generate_batch(
+        self,
+        *,
+        prompts: list[str],
+        configuration: dict[str, Any] | None = None,
+    ) -> list[ModelResponse]:
+        """
+        Generate responses for multiple prompts.
+
+        The default implementation executes requests concurrently.
+        Provider implementations can override this when the provider
+        exposes a native batch API.
+        """
+
+        if not prompts:
+            return []
+
+        responses = await asyncio.gather(
+            *(
+                self.generate(
+                    prompt=prompt,
+                    configuration=configuration,
+                )
+                for prompt in prompts
+            )
+        )
+
+        return list(responses)
