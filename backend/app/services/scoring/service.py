@@ -43,9 +43,17 @@ class ScoringService:
         *,
         scores: dict[str, dict[str, Any]],
         configuration: dict[str, Any] | None = None,
-        strategy: str = "weighted",
+        strategy: str | None = None,
     ):
-        calculator = self.get(strategy)
+        configuration = configuration or {}
+
+        selected_strategy = (
+            strategy
+            or configuration.get("strategy")
+            or "weighted"
+        )
+
+        calculator = self.get(selected_strategy)
 
         return calculator.calculate(
             scores=scores,
