@@ -1,6 +1,7 @@
 from app.models.model import Model, ModelProvider
 from app.services.model_gateway.base import ModelGateway
 from app.services.model_gateway.mock import MockModelProvider
+from app.services.model_gateway.ollama import OllamaModelProvider
 
 
 class ModelGatewayFactory:
@@ -15,7 +16,7 @@ class ModelGatewayFactory:
             return MockModelProvider()
 
         if model.provider == ModelProvider.OLLAMA:
-            raise ValueError("Ollama model provider is not implemented yet.")
+            return OllamaModelProvider()
 
         if model.provider == ModelProvider.OPENAI:
             raise ValueError("OpenAI model provider is not implemented yet.")
