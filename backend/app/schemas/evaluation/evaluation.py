@@ -40,4 +40,8 @@ class EvaluationRunResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    started_at: datetime | None
+    completed_at: datetime | None
+    duration_ms: int | None
+
     model_config = ConfigDict(from_attributes=True)

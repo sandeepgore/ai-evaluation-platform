@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
 from app.models.model import Model
+from app.schemas.model_gateway.batch_response import BatchModelResponse
+from app.schemas.model_gateway.response import ModelResponse
 from app.services.dataset_case import DatasetCaseService
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation_results import EvaluationResultService
@@ -56,35 +59,6 @@ class EvaluationEngine:
     ) -> list[tuple[Evaluator, float]]:
         """
         Resolve evaluators configured for the evaluation run.
-
-        Supported formats:
-
-        Legacy:
-        {
-            "evaluators": [
-                "exact_match",
-                "contains"
-            ]
-        }
-
-        Weighted:
-        {
-            "evaluators": [
-                {
-                    "name": "exact_match",
-                    "weight": 0.5
-                },
-                {
-                    "name": "contains",
-                    "weight": 0.5
-                }
-            ]
-        }
-
-        Legacy evaluator names receive a default weight of 1.0.
-
-        The evaluator weights are retained for compatibility.
-        Score aggregation is delegated to ScoringService.
         """
 
         evaluator_config: Any = ["exact_match"]
@@ -172,15 +146,9 @@ class EvaluationEngine:
         """
         Resolve the configured execution mode.
 
-        Supported:
-
-        {
-            "execution_mode": "sequential"
-        }
-
-        {
-            "execution_mode": "batch"
-        }
+        Supported values:
+            sequential
+            batch
 
         Defaults to sequential.
         """
@@ -214,13 +182,6 @@ class EvaluationEngine:
         """
         Resolve the configured batch size.
 
-        Supported:
-
-        {
-            "execution_mode": "batch",
-            "batch_size": 10
-        }
-
         Defaults to 10.
         """
 
@@ -230,10 +191,7 @@ class EvaluationEngine:
             configured_batch_size = run.configuration.get("batch_size")
 
             if configured_batch_size is not None:
-                if not isinstance(
-                    configured_batch_size,
-                    int,
-                ) or isinstance(
+                if not isinstance(configured_batch_size, int) or isinstance(
                     configured_batch_size,
                     bool,
                 ):
@@ -285,6 +243,32 @@ class EvaluationEngine:
         return configuration
 
     # ------------------------------------------------------------------
+    # Timing helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _utc_now() -> datetime:
+        """
+        Return the current timezone-aware UTC datetime.
+        """
+
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _calculate_duration_ms(
+        started_at: datetime,
+        completed_at: datetime,
+    ) -> int:
+        """
+        Calculate execution duration in milliseconds.
+        """
+
+        return max(
+            0,
+            int((completed_at - started_at).total_seconds() * 1000),
+        )
+
+    # ------------------------------------------------------------------
     # Case evaluation
     # ------------------------------------------------------------------
 
@@ -298,8 +282,6 @@ class EvaluationEngine:
     ) -> None:
         """
         Evaluate and persist one successful model response.
-
-        This method is shared by sequential and batch execution.
         """
 
         scores: dict[str, dict[str, Any]] = {}
@@ -382,8 +364,10 @@ class EvaluationEngine:
         exc: Exception,
     ) -> None:
         """
-        Persist a failed evaluation case.
+        Persist a failed evaluation case with a useful diagnostic message.
         """
+
+        error_message = f"{type(exc).__name__}: {str(exc) or repr(exc)}"
 
         await EvaluationResultService.create(
             self.db,
@@ -394,12 +378,14 @@ class EvaluationEngine:
             expected_output=case.expected_output,
             scores={},
             feedback=None,
-            trace=None,
+            trace={
+                "error_type": type(exc).__name__,
+            },
             latency_ms=None,
             input_tokens=None,
             output_tokens=None,
             total_tokens=None,
-            error_message=str(exc),
+            error_message=error_message,
         )
 
         run.failed_cases += 1
@@ -420,30 +406,17 @@ class EvaluationEngine:
         """
         Execute cases one at a time.
 
-        Flow:
-
-            case
-              |
-              v
-        generate()
-              |
-              v
-        evaluators
-              |
-              v
-        scoring
-              |
-              v
-        persist result
+        Database changes are committed once after all cases have been
+        processed instead of committing after every individual case.
         """
+
+        configuration = self._build_configuration(
+            model=model,
+            run=run,
+        )
 
         for case in cases:
             try:
-                configuration = self._build_configuration(
-                    model=model,
-                    run=run,
-                )
-
                 response = await model_gateway.generate(
                     prompt=case.input,
                     configuration=configuration,
@@ -463,10 +436,16 @@ class EvaluationEngine:
                     exc=exc,
                 )
 
-            await self.db.commit()
-            await self.db.refresh(run)
+        # --------------------------------------------------------------
+        # Commit all case results together.
+        # --------------------------------------------------------------
 
-    # ------------------------------------------------------------------
+        await self.db.commit()
+
+        # ------------------------------------------------------------------
+
+        # ------------------------------------------------------------------
+
     # Batch execution
     # ------------------------------------------------------------------
 
@@ -483,20 +462,20 @@ class EvaluationEngine:
         """
         Execute cases in batches.
 
-        Model inference happens through generate_batch().
+        The model gateway may return either:
 
-        Evaluation remains sequential inside each batch so that:
+        - BatchModelResponse objects containing:
+            index, response, error
+        - raw ModelResponse objects for backward compatibility
 
-            batch
-              |
-              v
-        generate_batch()
-              |
-              +--> case 1 -> evaluators -> scoring -> save
-              |
-              +--> case 2 -> evaluators -> scoring -> save
-              |
-              +--> case N -> evaluators -> scoring -> save
+        Gateway-level exceptions fail the entire batch.
+
+        Per-item errors only fail the corresponding case.
+
+        Successful responses are evaluated and persisted normally.
+
+        Execution continues with subsequent batches even when a batch
+        or individual item fails.
         """
 
         configuration = self._build_configuration(
@@ -514,22 +493,21 @@ class EvaluationEngine:
             prompts = [case.input for case in batch_cases]
 
             # ----------------------------------------------------------
-            # Model inference for the entire batch
+            # Execute batch inference
             # ----------------------------------------------------------
 
             try:
-                responses = await model_gateway.generate_batch(
+                batch_results = await model_gateway.generate_batch(
                     prompts=prompts,
                     configuration=configuration,
                 )
 
-                if len(responses) != len(batch_cases):
-                    raise RuntimeError("Model gateway returned an unexpected number of responses.")
-
             except Exception as exc:
                 # ------------------------------------------------------
-                # If batch inference fails, every case in that batch
-                # is marked as failed.
+                # Gateway-level failure.
+                #
+                # No per-item response exists, therefore the entire
+                # batch is considered failed.
                 # ------------------------------------------------------
 
                 for case in batch_cases:
@@ -545,15 +523,100 @@ class EvaluationEngine:
                 continue
 
             # ----------------------------------------------------------
-            # Evaluate each response sequentially
+            # Validate batch result
             # ----------------------------------------------------------
 
-            for case, response in zip(
+            if not isinstance(batch_results, list):
+                batch_exc = RuntimeError("Model gateway returned an invalid batch response.")
+
+                for case in batch_cases:
+                    await self._save_failed_case(
+                        run=run,
+                        case=case,
+                        exc=batch_exc,
+                    )
+
+                await self.db.commit()
+                await self.db.refresh(run)
+
+                continue
+
+            if len(batch_results) != len(batch_cases):
+                batch_exc = RuntimeError(
+                    "Model gateway returned an unexpected number of responses."
+                )
+
+                for case in batch_cases:
+                    await self._save_failed_case(
+                        run=run,
+                        case=case,
+                        exc=batch_exc,
+                    )
+
+                await self.db.commit()
+                await self.db.refresh(run)
+
+                continue
+
+            # ----------------------------------------------------------
+            # Process each case independently
+            # ----------------------------------------------------------
+
+            for case, result in zip(
                 batch_cases,
-                responses,
+                batch_results,
                 strict=True,
             ):
                 try:
+                    # --------------------------------------------------
+                    # New batch contract:
+                    #
+                    # BatchModelResponse(
+                    #     index=...,
+                    #     response=ModelResponse | None,
+                    #     error=... | None,
+                    # )
+                    # --------------------------------------------------
+
+                    if hasattr(result, "error") and hasattr(
+                        result,
+                        "response",
+                    ):
+                        if result.error is not None:
+                            error_type = result.error.get(
+                                "type",
+                                "ModelGatewayError",
+                            )
+
+                            error_message = result.error.get(
+                                "message",
+                                "Unknown model gateway error.",
+                            )
+
+                            raise RuntimeError(f"{error_type}: {error_message}")
+
+                        response = result.response
+
+                        if response is None:
+                            raise RuntimeError(
+                                "Batch model gateway returned no response and no error."
+                            )
+
+                    # --------------------------------------------------
+                    # Backward-compatible contract:
+                    #
+                    # generate_batch() returns raw ModelResponse objects
+                    # --------------------------------------------------
+                    else:
+                        response = result
+
+                    # --------------------------------------------------
+                    # Successful response
+                    # --------------------------------------------------
+
+                    if response is None:
+                        raise RuntimeError("Model gateway returned an empty response.")
+
                     await self._evaluate_case(
                         run=run,
                         case=case,
@@ -562,14 +625,22 @@ class EvaluationEngine:
                     )
 
                 except Exception as exc:
+                    # --------------------------------------------------
+                    # Failure of one item must not stop the batch.
+                    # --------------------------------------------------
+
                     await self._save_failed_case(
                         run=run,
                         case=case,
                         exc=exc,
                     )
 
-                await self.db.commit()
-                await self.db.refresh(run)
+            # ----------------------------------------------------------
+            # Commit this batch
+            # ----------------------------------------------------------
+
+            await self.db.commit()
+            await self.db.refresh(run)
 
     # ------------------------------------------------------------------
     # Main execution
@@ -581,6 +652,25 @@ class EvaluationEngine:
     ) -> EvaluationRun:
         """
         Execute all dataset cases belonging to an evaluation run.
+
+        Timing lifecycle:
+
+            PENDING
+                |
+                v
+            RUNNING
+                |
+                v
+            COMPLETED / FAILED
+
+        started_at:
+            Set when execution starts.
+
+        completed_at:
+            Set when execution finishes.
+
+        duration_ms:
+            Elapsed execution time in milliseconds.
         """
 
         # --------------------------------------------------------------
@@ -674,41 +764,79 @@ class EvaluationEngine:
         run.total_cases = len(cases)
         run.completed_cases = 0
         run.failed_cases = 0
+
+        # --------------------------------------------------------------
+        # 7. Start evaluation timing
+        # --------------------------------------------------------------
+
+        started_at = self._utc_now()
+
+        run.started_at = started_at
+        run.completed_at = None
+        run.duration_ms = None
         run.status = EvaluationRunStatus.RUNNING
 
+        # Commit RUNNING state immediately.
         await self.db.commit()
         await self.db.refresh(run)
 
         # --------------------------------------------------------------
-        # 7. Execute according to configured mode
+        # 8. Execute evaluation
         # --------------------------------------------------------------
 
-        if execution_mode == "sequential":
-            await self._execute_sequential(
-                run=run,
-                cases=cases,
-                model=model,
-                evaluator_configs=evaluator_configs,
-                model_gateway=model_gateway,
+        try:
+            if execution_mode == "sequential":
+                await self._execute_sequential(
+                    run=run,
+                    cases=cases,
+                    model=model,
+                    evaluator_configs=evaluator_configs,
+                    model_gateway=model_gateway,
+                )
+
+            elif execution_mode == "batch":
+                await self._execute_batch(
+                    run=run,
+                    cases=cases,
+                    model=model,
+                    evaluator_configs=evaluator_configs,
+                    model_gateway=model_gateway,
+                    batch_size=batch_size,
+                )
+
+            # ----------------------------------------------------------
+            # 9. Complete evaluation run
+            # ----------------------------------------------------------
+
+            completed_at = self._utc_now()
+
+            run.status = EvaluationRunStatus.COMPLETED
+            run.completed_at = completed_at
+            run.duration_ms = self._calculate_duration_ms(
+                started_at,
+                completed_at,
             )
 
-        elif execution_mode == "batch":
-            await self._execute_batch(
-                run=run,
-                cases=cases,
-                model=model,
-                evaluator_configs=evaluator_configs,
-                model_gateway=model_gateway,
-                batch_size=batch_size,
+            await self.db.commit()
+            await self.db.refresh(run)
+
+            return run
+
+        except Exception:
+            # ----------------------------------------------------------
+            # 10. Unexpected engine-level failure
+            # ----------------------------------------------------------
+
+            completed_at = self._utc_now()
+
+            run.status = EvaluationRunStatus.FAILED
+            run.completed_at = completed_at
+            run.duration_ms = self._calculate_duration_ms(
+                started_at,
+                completed_at,
             )
 
-        # --------------------------------------------------------------
-        # 8. Complete evaluation run
-        # --------------------------------------------------------------
+            await self.db.commit()
+            await self.db.refresh(run)
 
-        run.status = EvaluationRunStatus.COMPLETED
-
-        await self.db.commit()
-        await self.db.refresh(run)
-
-        return run
+            raise

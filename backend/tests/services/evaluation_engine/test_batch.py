@@ -4,76 +4,43 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from app.models.evaluation import EvaluationRunStatus
+from app.schemas.model_gateway import ModelResponse
+from app.schemas.model_gateway.batch_response import BatchModelResponse
 from app.services.evaluation_engine.engine import EvaluationEngine
-from app.services.evaluators.base import EvaluationScore
+from app.services.evaluation_engine import engine as engine_module
 
-
-class FakeEvaluator:
-    def __init__(self, name: str, score: float):
-        self._name = name
-        self._score = score
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    async def evaluate(
-        self,
-        *,
-        expected_output,
-        actual_output,
-        context=None,
-    ):
-        return EvaluationScore(
-            metric=self._name,
-            score=self._score,
-            feedback=f"{self._name} evaluated.",
-        )
-
-
-class FakeRegistry:
-    def __init__(self):
-        self.evaluators = {
-            "exact_match": FakeEvaluator("exact_match", 1.0),
-            "f1": FakeEvaluator("f1", 0.5),
-        }
-
-    def get(self, name):
-        evaluator = self.evaluators.get(name)
-
-        if evaluator is None:
-            raise ValueError(f"Unknown evaluator: {name}")
-
-        return evaluator
+from tests.services.evaluation_engine.test_engine import FakeRegistry
 
 
 @pytest.mark.asyncio
-async def test_engine_executes_evaluation_in_batches():
+async def test_engine_handles_batch_inference_failure_and_continues():
     """
-    Batch mode executes model inference through generate_batch()
-    and processes responses in the same order as the dataset cases.
+    When one batch fails during model inference:
+
+    - every case in the failed batch is marked failed
+    - subsequent batches continue executing
+    - successful batches are marked completed
+    - the final run contains correct counters
+
+    20 cases are processed in batches of 5.
+    The first batch fails.
     """
 
     run_id = uuid4()
     model_id = uuid4()
     dataset_version_id = uuid4()
 
+    # --------------------------------------------------------------
+    # Create 20 dataset cases
+    # --------------------------------------------------------------
+
     cases = [
         SimpleNamespace(
             id=uuid4(),
-            input="Question 1",
-            expected_output="Answer 1",
-        ),
-        SimpleNamespace(
-            id=uuid4(),
-            input="Question 2",
-            expected_output="Answer 2",
-        ),
-        SimpleNamespace(
-            id=uuid4(),
-            input="Question 3",
-            expected_output="Answer 3",
-        ),
+            input=f"Question {index}",
+            expected_output=f"Answer {index}",
+        )
+        for index in range(1, 21)
     ]
 
     run = SimpleNamespace(
@@ -82,7 +49,8 @@ async def test_engine_executes_evaluation_in_batches():
         dataset_version_id=dataset_version_id,
         configuration={
             "execution_mode": "batch",
-            "batch_size": 2,
+            "batch_size": 5,
+            "batch_concurrency": 3,
             "evaluators": [
                 {
                     "name": "exact_match",
@@ -113,49 +81,80 @@ async def test_engine_executes_evaluation_in_batches():
         is_active=True,
     )
 
+    # --------------------------------------------------------------
+    # Database mock
+    # --------------------------------------------------------------
+
     db = MagicMock()
 
-    db.execute = AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: model))
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+
+    # --------------------------------------------------------------
+    # Model gateway
+    # --------------------------------------------------------------
 
     model_gateway = MagicMock()
 
     model_gateway.generate = AsyncMock()
 
+    def successful_response(index: int) -> ModelResponse:
+        return ModelResponse(
+            output=f"Answer {index}",
+            trace={},
+            latency_ms=10,
+            input_tokens=2,
+            output_tokens=2,
+            total_tokens=4,
+        )
+
+    def successful_batch(
+        start_index: int,
+        end_index: int,
+    ) -> list[BatchModelResponse]:
+        return [
+            BatchModelResponse(
+                index=index - start_index,
+                response=successful_response(index),
+                error=None,
+            )
+            for index in range(start_index, end_index + 1)
+        ]
+
     model_gateway.generate_batch = AsyncMock(
         side_effect=[
-            [
-                SimpleNamespace(
-                    output="Answer 1",
-                    trace=None,
-                    latency_ms=10,
-                    input_tokens=2,
-                    output_tokens=2,
-                    total_tokens=4,
-                ),
-                SimpleNamespace(
-                    output="Answer 2",
-                    trace=None,
-                    latency_ms=10,
-                    input_tokens=2,
-                    output_tokens=2,
-                    total_tokens=4,
-                ),
-            ],
-            [
-                SimpleNamespace(
-                    output="Answer 3",
-                    trace=None,
-                    latency_ms=10,
-                    input_tokens=2,
-                    output_tokens=2,
-                    total_tokens=4,
-                ),
-            ],
+            # ------------------------------------------------------
+            # Batch 1 -> GATEWAY FAILURE
+            # Cases 1-5
+            # ------------------------------------------------------
+            RuntimeError("Simulated batch inference failure"),
+            # ------------------------------------------------------
+            # Batch 2 -> SUCCESS
+            # Cases 6-10
+            # ------------------------------------------------------
+            successful_batch(6, 10),
+            # ------------------------------------------------------
+            # Batch 3 -> SUCCESS
+            # Cases 11-15
+            # ------------------------------------------------------
+            successful_batch(11, 15),
+            # ------------------------------------------------------
+            # Batch 4 -> SUCCESS
+            # Cases 16-20
+            # ------------------------------------------------------
+            successful_batch(16, 20),
         ]
     )
+
+    # --------------------------------------------------------------
+    # Scoring
+    # --------------------------------------------------------------
 
     scoring_service = MagicMock()
 
@@ -166,13 +165,19 @@ async def test_engine_executes_evaluation_in_batches():
         },
     )
 
-    from app.services.evaluation_engine import engine as engine_module
+    # --------------------------------------------------------------
+    # Patch engine dependencies
+    # --------------------------------------------------------------
 
     engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
 
     engine_module.DatasetCaseService.list = AsyncMock(return_value=cases)
 
     engine_module.EvaluationResultService.create = AsyncMock()
+
+    # --------------------------------------------------------------
+    # Create engine
+    # --------------------------------------------------------------
 
     engine = EvaluationEngine(
         db=db,
@@ -181,81 +186,268 @@ async def test_engine_executes_evaluation_in_batches():
         scoring_service=scoring_service,
     )
 
+    # --------------------------------------------------------------
+    # Execute
+    # --------------------------------------------------------------
+
     result = await engine.execute(run_id)
 
+    # --------------------------------------------------------------
+    # Run assertions
+    # --------------------------------------------------------------
+
     assert result.status == EvaluationRunStatus.COMPLETED
-    assert result.total_cases == 3
-    assert result.completed_cases == 3
-    assert result.failed_cases == 0
 
-    # Three cases with batch_size=2 must produce two
-    # generate_batch() calls:
-    #
-    # Batch 1 -> Question 1, Question 2
-    # Batch 2 -> Question 3
+    assert result.total_cases == 20
 
-    assert model_gateway.generate_batch.await_count == 2
+    assert result.completed_cases == 15
 
-    model_gateway.generate_batch.assert_any_await(
-        prompts=[
-            "Question 1",
-            "Question 2",
-        ],
-        configuration={
-            "execution_mode": "batch",
-            "batch_size": 2,
-            "evaluators": [
-                {
-                    "name": "exact_match",
-                    "weight": 0.5,
-                },
-                {
-                    "name": "f1",
-                    "weight": 0.5,
-                },
-            ],
-            "scoring": {
-                "weights": {
-                    "exact_match": 0.5,
-                    "f1": 0.5,
-                }
-            },
-            "model": "mock-model",
-        },
-    )
+    assert result.failed_cases == 5
 
-    model_gateway.generate_batch.assert_any_await(
-        prompts=[
-            "Question 3",
-        ],
-        configuration={
-            "execution_mode": "batch",
-            "batch_size": 2,
-            "evaluators": [
-                {
-                    "name": "exact_match",
-                    "weight": 0.5,
-                },
-                {
-                    "name": "f1",
-                    "weight": 0.5,
-                },
-            ],
-            "scoring": {
-                "weights": {
-                    "exact_match": 0.5,
-                    "f1": 0.5,
-                }
-            },
-            "model": "mock-model",
-        },
-    )
+    # --------------------------------------------------------------
+    # Four batches should have been attempted
+    # --------------------------------------------------------------
 
-    # Batch mode must not use sequential model generation.
+    assert model_gateway.generate_batch.await_count == 4
+
+    # Sequential generate() must not be used.
     model_gateway.generate.assert_not_awaited()
 
-    # Three cases should produce three persisted results.
+    # --------------------------------------------------------------
+    # Verify batch sizes and ordering
+    # --------------------------------------------------------------
+
+    calls = model_gateway.generate_batch.await_args_list
+
+    assert len(calls) == 4
+
+    assert calls[0].kwargs["prompts"] == [
+        "Question 1",
+        "Question 2",
+        "Question 3",
+        "Question 4",
+        "Question 5",
+    ]
+
+    assert calls[1].kwargs["prompts"] == [
+        "Question 6",
+        "Question 7",
+        "Question 8",
+        "Question 9",
+        "Question 10",
+    ]
+
+    assert calls[2].kwargs["prompts"] == [
+        "Question 11",
+        "Question 12",
+        "Question 13",
+        "Question 14",
+        "Question 15",
+    ]
+
+    assert calls[3].kwargs["prompts"] == [
+        "Question 16",
+        "Question 17",
+        "Question 18",
+        "Question 19",
+        "Question 20",
+    ]
+
+    # --------------------------------------------------------------
+    # Every case should produce an EvaluationResult
+    # --------------------------------------------------------------
+
+    assert engine_module.EvaluationResultService.create.await_count == 20
+
+    # --------------------------------------------------------------
+    # Only successful cases should be evaluated/scored
+    # --------------------------------------------------------------
+
+    assert scoring_service.calculate.call_count == 15
+
+
+@pytest.mark.asyncio
+async def test_engine_isolates_individual_batch_item_failure():
+    """
+    One item in a batch may fail while the other items succeed.
+
+    The failed item must be persisted as failed while successful
+    items continue through evaluation and scoring.
+    """
+
+    run_id = uuid4()
+    model_id = uuid4()
+    dataset_version_id = uuid4()
+
+    cases = [
+        SimpleNamespace(
+            id=uuid4(),
+            input=f"Question {index}",
+            expected_output=f"Answer {index}",
+        )
+        for index in range(1, 4)
+    ]
+
+    run = SimpleNamespace(
+        id=run_id,
+        model_id=model_id,
+        dataset_version_id=dataset_version_id,
+        configuration={
+            "execution_mode": "batch",
+            "batch_size": 3,
+            "batch_concurrency": 3,
+            "evaluators": [
+                "exact_match",
+            ],
+        },
+        status=EvaluationRunStatus.PENDING,
+        total_cases=0,
+        completed_cases=0,
+        failed_cases=0,
+    )
+
+    model = SimpleNamespace(
+        id=model_id,
+        model_identifier="mock-model",
+        configuration={},
+        is_active=True,
+    )
+
+    # --------------------------------------------------------------
+    # Database mock
+    # --------------------------------------------------------------
+
+    db = MagicMock()
+
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
+
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    # --------------------------------------------------------------
+    # Model responses
+    # --------------------------------------------------------------
+
+    successful_response = ModelResponse(
+        output="Answer",
+        trace={},
+        latency_ms=10,
+        input_tokens=2,
+        output_tokens=2,
+        total_tokens=4,
+    )
+
+    model_gateway = MagicMock()
+
+    model_gateway.generate_batch = AsyncMock(
+        return_value=[
+            BatchModelResponse(
+                index=0,
+                response=successful_response,
+                error=None,
+            ),
+            BatchModelResponse(
+                index=1,
+                response=None,
+                error={
+                    "type": "ReadTimeout",
+                    "message": "Simulated timeout",
+                },
+            ),
+            BatchModelResponse(
+                index=2,
+                response=successful_response,
+                error=None,
+            ),
+        ]
+    )
+
+    model_gateway.generate = AsyncMock()
+
+    # --------------------------------------------------------------
+    # Scoring
+    # --------------------------------------------------------------
+
+    scoring_service = MagicMock()
+
+    scoring_service.calculate.return_value = SimpleNamespace(
+        score=1.0,
+        metadata={
+            "strategy": "weighted",
+        },
+    )
+
+    # --------------------------------------------------------------
+    # Patch engine dependencies
+    # --------------------------------------------------------------
+
+    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+
+    engine_module.DatasetCaseService.list = AsyncMock(return_value=cases)
+
+    engine_module.EvaluationResultService.create = AsyncMock()
+
+    # --------------------------------------------------------------
+    # Create engine
+    # --------------------------------------------------------------
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=FakeRegistry(),
+        scoring_service=scoring_service,
+    )
+
+    # --------------------------------------------------------------
+    # Execute
+    # --------------------------------------------------------------
+
+    result = await engine.execute(run_id)
+
+    # --------------------------------------------------------------
+    # Run assertions
+    # --------------------------------------------------------------
+
+    assert result.status == EvaluationRunStatus.COMPLETED
+
+    assert result.total_cases == 3
+
+    assert result.completed_cases == 2
+
+    assert result.failed_cases == 1
+
+    # Batch inference should be called once.
+    model_gateway.generate_batch.assert_awaited_once()
+
+    # Sequential generate() must not be used.
+    model_gateway.generate.assert_not_awaited()
+
+    # Only successful cases should be scored.
+    assert scoring_service.calculate.call_count == 2
+
+    # Every case should have an EvaluationResult.
     assert engine_module.EvaluationResultService.create.await_count == 3
 
-    # Scoring must happen once per case.
-    assert scoring_service.calculate.call_count == 3
+    # --------------------------------------------------------------
+    # Verify failed item
+    # --------------------------------------------------------------
+
+    failed_calls = [
+        call
+        for call in (engine_module.EvaluationResultService.create.await_args_list)
+        if call.kwargs["status"] == "failed"
+    ]
+
+    assert len(failed_calls) == 1
+
+    failed_call = failed_calls[0]
+
+    assert failed_call.kwargs["actual_output"] is None
+
+    assert failed_call.kwargs["scores"] == {}
+
+    assert "ReadTimeout" in failed_call.kwargs["error_message"]

@@ -1,8 +1,9 @@
+from datetime import datetime
 import uuid
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -84,4 +85,19 @@ class EvaluationRun(TimestampMixin, Base):
         Boolean,
         nullable=False,
         default=True,
+    )
+
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    duration_ms: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
     )
