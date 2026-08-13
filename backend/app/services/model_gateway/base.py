@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from app.schemas.model_gateway import ModelResponse
+from app.schemas.model_gateway.batch_response import BatchModelResponse
 
 
 class ModelGateway(ABC):
@@ -30,26 +31,47 @@ class ModelGateway(ABC):
         *,
         prompts: list[str],
         configuration: dict[str, Any] | None = None,
-    ) -> list[ModelResponse]:
+    ) -> list[BatchModelResponse]:
         """
-        Generate responses for multiple prompts.
+        Generate responses for multiple prompts concurrently.
 
-        The default implementation executes requests concurrently.
-        Provider implementations can override this when the provider
-        exposes a native batch API.
+        Each prompt is isolated independently.
+
+        A failure for one prompt does not fail the entire batch.
         """
-
         if not prompts:
             return []
 
-        responses = await asyncio.gather(
-            *(
-                self.generate(
+        configuration = configuration or {}
+
+        async def generate_one(
+            index: int,
+            prompt: str,
+        ) -> BatchModelResponse:
+            try:
+                response = await self.generate(
                     prompt=prompt,
                     configuration=configuration,
                 )
-                for prompt in prompts
+
+                return BatchModelResponse(
+                    index=index,
+                    response=response,
+                    error=None,
+                )
+
+            except Exception as exc:
+                return BatchModelResponse(
+                    index=index,
+                    response=None,
+                    error={
+                        "type": type(exc).__name__,
+                        "message": str(exc) or repr(exc),
+                    },
+                )
+
+        return list(
+            await asyncio.gather(
+                *(generate_one(index, prompt) for index, prompt in enumerate(prompts))
             )
         )
-
-        return list(responses)

@@ -35,7 +35,11 @@ def create_fake_run():
         is_active=True,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        started_at=None,
+        completed_at=None,
+        duration_ms=None,
     )
+
 
 def test_create_evaluation_run():
     run = create_fake_run()
@@ -80,9 +84,7 @@ def test_get_evaluation_run():
         "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
         new=AsyncMock(return_value=run),
     ):
-        response = client.get(
-            f"/api/v1/evaluation-runs/{run.id}"
-        )
+        response = client.get(f"/api/v1/evaluation-runs/{run.id}")
 
     assert response.status_code == 200
 
@@ -99,9 +101,7 @@ def test_get_evaluation_run_returns_404_when_missing():
         "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
         new=AsyncMock(return_value=None),
     ):
-        response = client.get(
-            f"/api/v1/evaluation-runs/{run_id}"
-        )
+        response = client.get(f"/api/v1/evaluation-runs/{run_id}")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Evaluation run not found"
@@ -114,9 +114,7 @@ def test_list_evaluation_runs():
         "app.api.v1.evaluation.evaluation.EvaluationRunService.list",
         new=AsyncMock(return_value=[run]),
     ):
-        response = client.get(
-            "/api/v1/evaluation-runs"
-        )
+        response = client.get("/api/v1/evaluation-runs")
 
     assert response.status_code == 200
 
@@ -133,12 +131,15 @@ def test_update_evaluation_run():
     updated_run.id = run.id
     updated_run.name = "Updated Evaluation"
 
-    with patch(
-        "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
-        new=AsyncMock(return_value=run),
-    ), patch(
-        "app.api.v1.evaluation.evaluation.EvaluationRunService.update",
-        new=AsyncMock(return_value=updated_run),
+    with (
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
+            new=AsyncMock(return_value=run),
+        ),
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationRunService.update",
+            new=AsyncMock(return_value=updated_run),
+        ),
     ):
         response = client.patch(
             f"/api/v1/evaluation-runs/{run.id}",
@@ -158,16 +159,17 @@ def test_update_evaluation_run():
 def test_delete_evaluation_run():
     run = create_fake_run()
 
-    with patch(
-        "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
-        new=AsyncMock(return_value=run),
-    ), patch(
-        "app.api.v1.evaluation.evaluation.EvaluationRunService.delete",
-        new=AsyncMock(),
-    ) as delete_mock:
-        response = client.delete(
-            f"/api/v1/evaluation-runs/{run.id}"
-        )
+    with (
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
+            new=AsyncMock(return_value=run),
+        ),
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationRunService.delete",
+            new=AsyncMock(),
+        ) as delete_mock,
+    ):
+        response = client.delete(f"/api/v1/evaluation-runs/{run.id}")
 
     assert response.status_code == 204
     delete_mock.assert_awaited_once()
@@ -188,9 +190,7 @@ def test_execute_evaluation_run():
         "app.api.v1.evaluation.evaluation.EvaluationEngine",
         return_value=mock_engine,
     ):
-        response = client.post(
-            f"/api/v1/evaluation-runs/{run.id}/execute"
-        )
+        response = client.post(f"/api/v1/evaluation-runs/{run.id}/execute")
 
     assert response.status_code == 200
 
@@ -218,13 +218,10 @@ def test_get_evaluation_run_summary():
     }
 
     with patch(
-        "app.api.v1.evaluation.evaluation."
-        "EvaluationRunSummaryService.calculate",
+        "app.api.v1.evaluation.evaluation.EvaluationRunSummaryService.calculate",
         new=AsyncMock(return_value=summary),
     ):
-        response = client.get(
-            f"/api/v1/evaluation-runs/{run_id}/summary"
-        )
+        response = client.get(f"/api/v1/evaluation-runs/{run_id}/summary")
 
     assert response.status_code == 200
 

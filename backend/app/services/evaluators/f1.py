@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from collections import Counter
 from typing import Any
 
@@ -8,6 +10,21 @@ class F1Evaluator(Evaluator):
     @property
     def name(self) -> str:
         return "f1"
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """
+        Normalize Unicode and casing before tokenization.
+        """
+        return unicodedata.normalize("NFKC", text).lower()
+
+    @classmethod
+    def _tokenize(cls, text: str) -> list[str]:
+        """
+        Tokenize text while ignoring punctuation.
+        """
+        normalized = cls._normalize_text(text)
+        return re.findall(r"\b\w+\b", normalized, flags=re.UNICODE)
 
     async def evaluate(
         self,
@@ -24,8 +41,8 @@ class F1Evaluator(Evaluator):
                 feedback="Expected output or actual output is missing.",
             )
 
-        expected_tokens = expected_output.strip().lower().split()
-        actual_tokens = actual_output.strip().lower().split()
+        expected_tokens = self._tokenize(expected_output)
+        actual_tokens = self._tokenize(actual_output)
 
         if not expected_tokens or not actual_tokens:
             return EvaluationScore(
@@ -48,6 +65,9 @@ class F1Evaluator(Evaluator):
                 metadata={
                     "precision": 0.0,
                     "recall": 0.0,
+                    "overlap": 0,
+                    "expected_tokens": len(expected_tokens),
+                    "actual_tokens": len(actual_tokens),
                 },
             )
 
