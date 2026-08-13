@@ -151,12 +151,6 @@ class OllamaModelProvider(ModelGateway):
             ) -> BatchModelResponse:
                 async with semaphore:
                     try:
-                        # TEMPORARY FAILURE-INJECTION TEST
-                        if "capital of France" in prompt:
-                            raise RuntimeError(
-                                "INTENTIONAL TEST FAILURE - Ollama batch failure isolation"
-                            )
-
                         started_at = time.perf_counter()
 
                         payload = {
