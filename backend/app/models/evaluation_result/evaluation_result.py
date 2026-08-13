@@ -1,6 +1,14 @@
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,6 +17,20 @@ from app.models.base import TimestampMixin
 
 class EvaluationResult(TimestampMixin, Base):
     __tablename__ = "evaluation_results"
+
+    __table_args__ = (
+        Index(
+            "uq_evaluation_results_run_case",
+            "evaluation_run_id",
+            "dataset_case_id",
+            unique=True,
+        ),
+        Index(
+            "ix_evaluation_results_run_created_at",
+            "evaluation_run_id",
+            "created_at",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

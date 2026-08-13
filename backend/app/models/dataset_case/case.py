@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,15 @@ from app.models.base import TimestampMixin
 
 class DatasetCase(TimestampMixin, Base):
     __tablename__ = "dataset_cases"
+
+    __table_args__ = (
+        Index(
+            "uq_dataset_cases_version_position",
+            "dataset_version_id",
+            "position",
+            unique=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
