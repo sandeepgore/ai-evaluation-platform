@@ -14,9 +14,7 @@ async def test_contains_returns_one_when_expected_is_present():
 
     assert result.metric == "contains"
     assert result.score == 1.0
-    assert result.feedback == (
-        "Expected output is contained in the actual output."
-    )
+    assert result.feedback == ("Expected output is contained in the actual output.")
 
 
 @pytest.mark.asyncio
@@ -53,9 +51,7 @@ async def test_contains_returns_zero_when_expected_is_missing():
     )
 
     assert result.score == 0.0
-    assert result.feedback == (
-        "Expected output is not contained in the actual output."
-    )
+    assert result.feedback == ("Expected output is not contained in the actual output.")
 
 
 @pytest.mark.asyncio
@@ -93,3 +89,30 @@ async def test_contains_returns_zero_when_output_is_missing(
 
     assert result.score == 0.0
     assert result.feedback == "Expected output or actual output is missing."
+
+
+def test_contains_metadata():
+    evaluator = ContainsEvaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "correctness"
+
+    assert metadata.description == (
+        "Checks whether the reference answer is contained "
+        "within the model output using case-insensitive "
+        "substring matching."
+    )
+
+    assert metadata.requires_reference is True
+    assert metadata.requires_context is False
+    assert metadata.requires_llm is False
+
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "reference-based",
+        "substring",
+        "case-insensitive",
+    )

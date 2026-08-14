@@ -114,3 +114,28 @@ async def test_relevance_accepts_query_context_key():
 
     assert result.score == pytest.approx(1.0)
     assert result.metadata["overlap_tokens"] == 2
+
+
+def test_relevance_metadata():
+    evaluator = RelevanceEvaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "relevance"
+
+    assert metadata.description == (
+        "Measures lexical coverage of meaningful query terms "
+        "in the model output using deterministic token overlap."
+    )
+
+    assert metadata.requires_reference is False
+    assert metadata.requires_context is True
+    assert metadata.requires_llm is False
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "context-based",
+        "lexical",
+        "relevance",
+    )

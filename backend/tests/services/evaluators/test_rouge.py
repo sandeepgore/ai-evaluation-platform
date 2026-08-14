@@ -100,3 +100,29 @@ async def test_rouge_l_returns_zero_when_output_is_missing(
 
     assert result.score == 0.0
     assert result.feedback == ("Expected output or actual output is missing.")
+
+
+def test_rouge_metadata():
+    evaluator = ROUGELvaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "similarity"
+
+    assert metadata.description == (
+        "Measures longest common subsequence overlap between "
+        "the model output and the reference answer using "
+        "deterministic ROUGE-L scoring."
+    )
+
+    assert metadata.requires_reference is True
+    assert metadata.requires_context is False
+    assert metadata.requires_llm is False
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "reference-based",
+        "lcs",
+        "rouge",
+    )

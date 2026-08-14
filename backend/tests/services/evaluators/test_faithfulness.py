@@ -131,3 +131,28 @@ async def test_faithfulness_accepts_context_list():
 
     assert result.score == pytest.approx(1.0)
     assert result.metadata["supported_tokens"] > 0
+
+
+def test_faithfulness_metadata():
+    evaluator = FaithfulnessEvaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "faithfulness"
+
+    assert metadata.description == (
+        "Measures lexical support for model output terms against "
+        "the supplied evaluation context using deterministic token matching."
+    )
+
+    assert metadata.requires_reference is False
+    assert metadata.requires_context is True
+    assert metadata.requires_llm is False
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "context-based",
+        "lexical",
+        "faithfulness",
+    )

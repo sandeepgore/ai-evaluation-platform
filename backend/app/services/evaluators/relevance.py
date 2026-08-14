@@ -2,21 +2,45 @@ import re
 import unicodedata
 from typing import Any
 
-from app.services.evaluators.base import EvaluationScore, Evaluator
+from app.services.evaluators.base import (
+    EvaluationScore,
+    Evaluator,
+    EvaluatorMetadata,
+)
 
 
 class RelevanceEvaluator(Evaluator):
     """
-    Keyword-based relevance evaluator.
+    Deterministic lexical relevance evaluator.
 
-    Compares the important terms in the input/query with the actual
-    model output.
+    Measures how much of the user's input/query is covered by
+    meaningful terms in the model output.
 
-    This is a lightweight lexical relevance metric. It does not use
-    embeddings or an LLM judge.
+    Formula:
+
+        relevance = overlapping_query_terms / query_terms
+
+    Characteristics:
+        - Requires actual model output.
+        - Requires input/query in evaluation context.
+        - Does not require expected output.
+        - Does not use an LLM.
+        - Does not use embeddings.
+        - Uses case-insensitive token matching.
+        - Normalizes Unicode using NFKC.
+        - Ignores punctuation.
+        - Removes common English stopwords.
+        - Treats each meaningful query term once.
+        - Returns a score in the range [0, 1].
+
+    Important:
+        This is lexical relevance, not semantic relevance.
+
+        A future semantic/LLM-based relevance evaluator should be
+        implemented as a separate evaluator rather than changing
+        this evaluator's existing behavior.
     """
 
-    # Common English stopwords that should not influence lexical relevance.
     STOPWORDS = {
         "a",
         "an",
@@ -52,19 +76,48 @@ class RelevanceEvaluator(Evaluator):
 
     @property
     def name(self) -> str:
+        """Return the unique evaluator name."""
         return "relevance"
+
+    @property
+    def metadata(self) -> EvaluatorMetadata:
+        """
+        Return static metadata describing the relevance evaluator.
+        """
+        return EvaluatorMetadata(
+            category="relevance",
+            description=(
+                "Measures lexical coverage of meaningful query terms "
+                "in the model output using deterministic token overlap."
+            ),
+            requires_reference=False,
+            requires_context=True,
+            requires_llm=False,
+            applicable_to=("text",),
+            tags=(
+                "deterministic",
+                "context-based",
+                "lexical",
+                "relevance",
+            ),
+        )
 
     @staticmethod
     def _normalize_text(text: str) -> str:
         """
         Normalize Unicode and casing.
         """
-        return unicodedata.normalize("NFKC", text).lower()
+        return unicodedata.normalize(
+            "NFKC",
+            text,
+        ).lower()
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
         """
         Tokenize text while ignoring punctuation.
+
+        The tokenizer is deterministic and Unicode-aware.
         """
         normalized = cls._normalize_text(text)
 
@@ -77,9 +130,12 @@ class RelevanceEvaluator(Evaluator):
     @classmethod
     def _meaningful_tokens(cls, text: str) -> list[str]:
         """
-        Return unique meaningful tokens with common stopwords removed.
+        Extract unique meaningful tokens.
 
-        Order is preserved so metadata remains deterministic.
+        Common stopwords are removed.
+
+        Token order is preserved so that metadata remains
+        deterministic and easy to inspect.
         """
         tokens = cls._tokenize(text)
 
@@ -88,9 +144,7 @@ class RelevanceEvaluator(Evaluator):
     @classmethod
     def _relevance_tokens(cls, text: str) -> list[str]:
         """
-        Extract terms that carry relevance information.
-
-        Stopwords are removed, while meaningful lexical terms are kept.
+        Extract lexical terms used for relevance calculation.
         """
         return cls._meaningful_tokens(text)
 
@@ -100,11 +154,28 @@ class RelevanceEvaluator(Evaluator):
         actual_tokens: list[str],
     ) -> list[str]:
         """
-        Return unique query terms that occur in the actual output.
+        Return unique query terms present in the actual output.
+
+        Query-token order is preserved.
         """
         actual_token_set = set(actual_tokens)
 
         return [token for token in query_tokens if token in actual_token_set]
+
+    @staticmethod
+    def _calculate_score(
+        overlap_count: int,
+        query_token_count: int,
+    ) -> float:
+        """
+        Calculate lexical query coverage.
+
+        Returns zero when there are no meaningful query terms.
+        """
+        if query_token_count == 0:
+            return 0.0
+
+        return overlap_count / query_token_count
 
     async def evaluate(
         self,
@@ -113,6 +184,13 @@ class RelevanceEvaluator(Evaluator):
         actual_output: str | None,
         context: dict[str, Any] | None = None,
     ) -> EvaluationScore:
+        """
+        Calculate deterministic lexical relevance.
+
+        The expected output is intentionally not required because
+        relevance evaluates whether the generated answer addresses
+        terms present in the input/query.
+        """
 
         if actual_output is None:
             return EvaluationScore(
@@ -132,7 +210,7 @@ class RelevanceEvaluator(Evaluator):
             return EvaluationScore(
                 metric=self.name,
                 score=0.0,
-                feedback=("Input or query is missing from evaluation context."),
+                feedback="Input or query is missing from evaluation context.",
             )
 
         input_text = context.get("input") or context.get("query")
@@ -141,7 +219,7 @@ class RelevanceEvaluator(Evaluator):
             return EvaluationScore(
                 metric=self.name,
                 score=0.0,
-                feedback=("Input or query is missing from evaluation context."),
+                feedback="Input or query is missing from evaluation context.",
             )
 
         query_tokens = self._relevance_tokens(input_text)
@@ -166,9 +244,10 @@ class RelevanceEvaluator(Evaluator):
 
         overlap_count = len(overlap)
 
-        # Relevance is measured as the proportion of meaningful query
-        # concepts covered by the answer.
-        score = overlap_count / len(query_tokens)
+        score = self._calculate_score(
+            overlap_count,
+            len(query_tokens),
+        )
 
         return EvaluationScore(
             metric=self.name,

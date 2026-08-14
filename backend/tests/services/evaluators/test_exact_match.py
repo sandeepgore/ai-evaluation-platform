@@ -63,3 +63,28 @@ async def test_exact_match_returns_zero_when_output_is_missing(
 
     assert result.score == 0.0
     assert result.feedback == "Expected output or actual output is missing."
+
+
+def test_exact_match_metadata():
+    evaluator = ExactMatchEvaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "correctness"
+
+    assert metadata.description == (
+        "Checks whether the model output exactly matches "
+        "the reference answer after trimming surrounding whitespace."
+    )
+
+    assert metadata.requires_reference is True
+    assert metadata.requires_context is False
+    assert metadata.requires_llm is False
+
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "reference-based",
+        "exact-match",
+    )
