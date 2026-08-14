@@ -104,3 +104,28 @@ async def test_bleu_returns_zero_when_output_is_missing(
 
     assert result.score == 0.0
     assert result.feedback == ("Expected output or actual output is missing.")
+
+
+def test_bleu_metadata():
+    evaluator = BLEUEvaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "similarity"
+
+    assert metadata.description == (
+        "Measures n-gram overlap between the model output and "
+        "the reference answer using deterministic BLEU-4 scoring."
+    )
+
+    assert metadata.requires_reference is True
+    assert metadata.requires_context is False
+    assert metadata.requires_llm is False
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "reference-based",
+        "n-gram",
+        "bleu",
+    )

@@ -15,11 +15,20 @@ class EvaluatorRegistry:
     def register(self, evaluator: Evaluator) -> None:
         self._evaluators[evaluator.name] = evaluator
 
-    def register_alias(self, alias: str, evaluator: Evaluator) -> None:
+    def register_alias(
+        self,
+        alias: str,
+        evaluator: Evaluator,
+    ) -> None:
         self._evaluators[alias] = evaluator
 
-    def get(self, name: str) -> Evaluator | None:
-        return self._evaluators.get(name)
+    def get(self, name: str) -> Evaluator:
+        evaluator = self._evaluators.get(name)
+
+        if evaluator is None:
+            raise ValueError(f"Unknown evaluator: {name}")
+
+        return evaluator
 
     def get_many(self, names: list[str]) -> list[Evaluator]:
         return [self._evaluators[name] for name in names if name in self._evaluators]

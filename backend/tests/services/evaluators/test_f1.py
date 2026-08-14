@@ -48,9 +48,7 @@ async def test_f1_returns_zero_when_there_is_no_overlap():
     assert result.score == 0.0
     assert result.metadata["precision"] == 0.0
     assert result.metadata["recall"] == 0.0
-    assert result.feedback == (
-        "No token overlap between expected and actual output."
-    )
+    assert result.feedback == ("No token overlap between expected and actual output.")
 
 
 @pytest.mark.asyncio
@@ -76,9 +74,7 @@ async def test_f1_returns_zero_for_empty_output():
     )
 
     assert result.score == 0.0
-    assert result.feedback == (
-        "Expected output or actual output is empty."
-    )
+    assert result.feedback == ("Expected output or actual output is empty.")
 
 
 @pytest.mark.asyncio
@@ -103,3 +99,28 @@ async def test_f1_returns_zero_when_output_is_missing(
 
     assert result.score == 0.0
     assert result.feedback == "Expected output or actual output is missing."
+
+
+def test_f1_metadata():
+    evaluator = F1Evaluator()
+
+    metadata = evaluator.metadata
+
+    assert metadata.category == "correctness"
+
+    assert metadata.description == (
+        "Measures token-level F1 overlap between the model output "
+        "and the reference answer using precision and recall."
+    )
+
+    assert metadata.requires_reference is True
+    assert metadata.requires_context is False
+    assert metadata.requires_llm is False
+    assert metadata.applicable_to == ("text",)
+
+    assert metadata.tags == (
+        "deterministic",
+        "reference-based",
+        "token-overlap",
+        "f1",
+    )

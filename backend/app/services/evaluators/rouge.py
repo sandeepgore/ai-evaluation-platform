@@ -2,23 +2,61 @@ import re
 import unicodedata
 from typing import Any
 
-from app.services.evaluators.base import EvaluationScore, Evaluator
+from app.services.evaluators.base import (
+    EvaluationScore,
+    Evaluator,
+    EvaluatorMetadata,
+)
 
 
 class ROUGELvaluator(Evaluator):
     """
-    ROUGE-L evaluator based on Longest Common Subsequence (LCS).
+    Deterministic ROUGE-L evaluator based on Longest Common
+    Subsequence (LCS).
 
-    Calculates:
-    - LCS length
-    - LCS precision
-    - LCS recall
-    - ROUGE-L F1 score
+    ROUGE-L measures the similarity between generated output
+    and a reference answer based on the longest common
+    subsequence of tokens.
+
+    Characteristics:
+        - Requires expected/reference output.
+        - Does not require evaluation context.
+        - Does not use an LLM.
+        - Does not use embeddings.
+        - Uses case-insensitive token matching.
+        - Normalizes Unicode using NFKC.
+        - Ignores punctuation during tokenization.
+        - Uses deterministic LCS-based scoring.
     """
 
     @property
     def name(self) -> str:
+        """Return the unique evaluator name."""
         return "rouge_l"
+
+    @property
+    def metadata(self) -> EvaluatorMetadata:
+        """
+        Return static metadata describing the ROUGE-L evaluator.
+        """
+        return EvaluatorMetadata(
+            category="similarity",
+            description=(
+                "Measures longest common subsequence overlap between "
+                "the model output and the reference answer using "
+                "deterministic ROUGE-L scoring."
+            ),
+            requires_reference=True,
+            requires_context=False,
+            requires_llm=False,
+            applicable_to=("text",),
+            tags=(
+                "deterministic",
+                "reference-based",
+                "lcs",
+                "rouge",
+            ),
+        )
 
     @staticmethod
     def _normalize_text(text: str) -> str:
@@ -33,7 +71,12 @@ class ROUGELvaluator(Evaluator):
         Tokenize text while ignoring punctuation.
         """
         normalized = cls._normalize_text(text)
-        return re.findall(r"\b\w+\b", normalized, flags=re.UNICODE)
+
+        return re.findall(
+            r"\b\w+\b",
+            normalized,
+            flags=re.UNICODE,
+        )
 
     @staticmethod
     def _lcs_length(
@@ -73,6 +116,9 @@ class ROUGELvaluator(Evaluator):
         actual_output: str | None,
         context: dict[str, Any] | None = None,
     ) -> EvaluationScore:
+        """
+        Calculate deterministic ROUGE-L F1.
+        """
 
         if expected_output is None or actual_output is None:
             return EvaluationScore(
@@ -100,7 +146,7 @@ class ROUGELvaluator(Evaluator):
             return EvaluationScore(
                 metric=self.name,
                 score=0.0,
-                feedback=("No common subsequence between expected and actual output."),
+                feedback="No common subsequence between expected and actual output.",
                 metadata={
                     "lcs_length": 0,
                     "precision": 0.0,

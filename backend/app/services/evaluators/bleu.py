@@ -4,22 +4,60 @@ import unicodedata
 from collections import Counter
 from typing import Any
 
-from app.services.evaluators.base import EvaluationScore, Evaluator
+from app.services.evaluators.base import (
+    EvaluationScore,
+    Evaluator,
+    EvaluatorMetadata,
+)
 
 
 class BLEUEvaluator(Evaluator):
     """
-    BLEU-4 evaluator for comparing generated text against a reference.
+    Deterministic BLEU-4 evaluator for comparing generated text
+    against a single reference answer.
 
-    Uses:
-    - 1-gram through 4-gram modified precision
-    - geometric mean of n-gram precisions
-    - brevity penalty
+    BLEU measures n-gram overlap between generated output and
+    a reference answer.
+
+    Characteristics:
+        - Requires expected/reference output.
+        - Does not require evaluation context.
+        - Does not use an LLM.
+        - Does not use embeddings.
+        - Uses case-insensitive token matching.
+        - Normalizes Unicode using NFKC.
+        - Ignores punctuation during tokenization.
+        - Uses clipped n-gram counts.
+        - Uses unsmoothed BLEU-4.
     """
 
     @property
     def name(self) -> str:
+        """Return the unique evaluator name."""
         return "bleu"
+
+    @property
+    def metadata(self) -> EvaluatorMetadata:
+        """
+        Return static metadata describing the BLEU evaluator.
+        """
+        return EvaluatorMetadata(
+            category="similarity",
+            description=(
+                "Measures n-gram overlap between the model output and "
+                "the reference answer using deterministic BLEU-4 scoring."
+            ),
+            requires_reference=True,
+            requires_context=False,
+            requires_llm=False,
+            applicable_to=("text",),
+            tags=(
+                "deterministic",
+                "reference-based",
+                "n-gram",
+                "bleu",
+            ),
+        )
 
     @staticmethod
     def _normalize_text(text: str) -> str:
@@ -34,20 +72,25 @@ class BLEUEvaluator(Evaluator):
         Tokenize text while ignoring punctuation.
         """
         normalized = cls._normalize_text(text)
-        return re.findall(r"\b\w+\b", normalized, flags=re.UNICODE)
+
+        return re.findall(
+            r"\b\w+\b",
+            normalized,
+            flags=re.UNICODE,
+        )
 
     @staticmethod
-    def _ngrams(tokens: list[str], n: int) -> Counter[tuple[str, ...]]:
+    def _ngrams(
+        tokens: list[str],
+        n: int,
+    ) -> Counter[tuple[str, ...]]:
         """
-        Generate n-gram counts.
+        Generate n-gram frequency counts.
         """
         if len(tokens) < n:
             return Counter()
 
-        return Counter(
-            tuple(tokens[index : index + n])
-            for index in range(len(tokens) - n + 1)
-        )
+        return Counter(tuple(tokens[index : index + n]) for index in range(len(tokens) - n + 1))
 
     @classmethod
     def _modified_precision(
@@ -58,9 +101,6 @@ class BLEUEvaluator(Evaluator):
     ) -> tuple[int, int]:
         """
         Calculate clipped n-gram precision.
-
-        Returns:
-            (matched_count, total_candidate_ngrams)
         """
         actual_ngrams = cls._ngrams(actual_tokens, n)
         reference_ngrams = cls._ngrams(reference_tokens, n)
@@ -68,14 +108,26 @@ class BLEUEvaluator(Evaluator):
         if not actual_ngrams:
             return 0, 0
 
-        matched = sum(
-            min(count, reference_ngrams[ngram])
-            for ngram, count in actual_ngrams.items()
-        )
+        matched = sum(min(count, reference_ngrams[ngram]) for ngram, count in actual_ngrams.items())
 
         total = sum(actual_ngrams.values())
 
         return matched, total
+
+    @staticmethod
+    def _calculate_brevity_penalty(
+        reference_length: int,
+        actual_length: int,
+    ) -> float:
+        """
+        Calculate the BLEU brevity penalty.
+        """
+        if actual_length >= reference_length:
+            return 1.0
+
+        return math.exp(
+            1 - reference_length / actual_length,
+        )
 
     async def evaluate(
         self,
@@ -84,6 +136,9 @@ class BLEUEvaluator(Evaluator):
         actual_output: str | None,
         context: dict[str, Any] | None = None,
     ) -> EvaluationScore:
+        """
+        Calculate deterministic unsmoothed BLEU-4.
+        """
 
         if expected_output is None or actual_output is None:
             return EvaluationScore(
@@ -113,44 +168,30 @@ class BLEUEvaluator(Evaluator):
                 n,
             )
 
-            matched_counts[f"{n}-gram"] = matched
-            total_counts[f"{n}-gram"] = total
+            gram_name = f"{n}-gram"
 
-            precisions[f"{n}-gram"] = (
-                matched / total
-                if total > 0
-                else 0.0
-            )
-
-        if any(value == 0.0 for value in precisions.values()):
-            bleu_score = 0.0
-        else:
-            log_precision_sum = sum(
-                math.log(value)
-                for value in precisions.values()
-            )
-
-            geometric_mean = math.exp(log_precision_sum / 4)
-
-            reference_length = len(reference_tokens)
-            actual_length = len(actual_tokens)
-
-            brevity_penalty = (
-                1.0
-                if actual_length >= reference_length
-                else math.exp(1 - reference_length / actual_length)
-            )
-
-            bleu_score = brevity_penalty * geometric_mean
+            matched_counts[gram_name] = matched
+            total_counts[gram_name] = total
+            precisions[gram_name] = matched / total if total > 0 else 0.0
 
         reference_length = len(reference_tokens)
         actual_length = len(actual_tokens)
 
-        brevity_penalty = (
-            1.0
-            if actual_length >= reference_length
-            else math.exp(1 - reference_length / actual_length)
+        brevity_penalty = self._calculate_brevity_penalty(
+            reference_length,
+            actual_length,
         )
+
+        if any(value == 0.0 for value in precisions.values()):
+            bleu_score = 0.0
+        else:
+            log_precision_sum = sum(math.log(value) for value in precisions.values())
+
+            geometric_mean = math.exp(
+                log_precision_sum / 4,
+            )
+
+            bleu_score = brevity_penalty * geometric_mean
 
         return EvaluationScore(
             metric=self.name,
