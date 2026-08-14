@@ -292,9 +292,19 @@ class EvaluationEngine:
         # --------------------------------------------------------------
 
         for evaluator, _weight in evaluator_configs:
+            evaluation_context: dict[str, Any] = {
+                "input": case.input,
+            }
+
+            case_metadata = getattr(case, "case_metadata", None)
+
+            if case_metadata:
+                evaluation_context.update(case_metadata)
+
             evaluation_score = await evaluator.evaluate(
                 expected_output=case.expected_output,
                 actual_output=response.output,
+                context=evaluation_context,
             )
 
             scores[evaluation_score.metric] = {
