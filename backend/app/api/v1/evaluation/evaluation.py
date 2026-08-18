@@ -14,6 +14,9 @@ from app.services.evaluation import EvaluationRunService
 from app.services.evaluation_engine.engine import EvaluationEngine
 from app.services.evaluators import create_default_registry
 from app.services.scoring import ScoringService
+from app.services.evaluators.applicability import (
+    EvaluatorApplicabilityService,
+)
 
 router = APIRouter(
     prefix="/evaluation-runs",
@@ -138,12 +141,16 @@ async def execute_evaluation_run(
     db: AsyncSession = Depends(get_db),
 ):
     evaluator_registry = create_default_registry()
+    applicability_service = EvaluatorApplicabilityService(
+        evaluator_registry,
+    )
     scoring_service = ScoringService()
 
     engine = EvaluationEngine(
         db=db,
         model_gateway=None,
         evaluator_registry=evaluator_registry,
+        applicability_service=applicability_service,
         scoring_service=scoring_service,
     )
 

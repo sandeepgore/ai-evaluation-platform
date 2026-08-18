@@ -5,18 +5,21 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_type import EvaluationType
 
 
 class EvaluationRunCreate(BaseModel):
     dataset_version_id: UUID
     model_id: UUID
     name: str = Field(..., min_length=1, max_length=150)
+    evaluation_type: EvaluationType = EvaluationType.TEXT
     configuration: dict[str, Any] | None = None
 
 
 class EvaluationRunUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=150)
     status: EvaluationRunStatus | None = None
+    evaluation_type: EvaluationType | None = None
     configuration: dict[str, Any] | None = None
     summary_feedback: str | None = None
     total_cases: int | None = Field(None, ge=0)
@@ -31,6 +34,7 @@ class EvaluationRunResponse(BaseModel):
     model_id: UUID
     name: str
     status: EvaluationRunStatus
+    evaluation_type: EvaluationType
     configuration: dict[str, Any] | None
     summary_feedback: str | None
     total_cases: int

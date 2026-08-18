@@ -1,14 +1,15 @@
 from datetime import datetime
-import uuid
 from enum import Enum
+import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.base import TimestampMixin
+from app.models.evaluation.evaluation_type import EvaluationType
 
 
 class EvaluationRunStatus(str, Enum):
@@ -45,6 +46,18 @@ class EvaluationRun(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(
         String(150),
         nullable=False,
+    )
+
+    evaluation_type: Mapped[EvaluationType] = mapped_column(
+        SQLEnum(
+            EvaluationType,
+            name="evaluation_type",
+            native_enum=False,
+            values_callable=lambda enum_class: [item.value for item in enum_class],
+        ),
+        nullable=False,
+        default=EvaluationType.TEXT,
+        index=True,
     )
 
     status: Mapped[EvaluationRunStatus] = mapped_column(

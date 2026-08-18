@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models.evaluation import EvaluationRunStatus
 from types import SimpleNamespace
+from app.models.evaluation.evaluation_type import EvaluationType
 
 client = TestClient(app)
 
@@ -15,6 +16,7 @@ def create_fake_run():
     return SimpleNamespace(
         id=uuid4(),
         dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
         model_id=uuid4(),
         name="API Test Evaluation",
         status=EvaluationRunStatus.PENDING,

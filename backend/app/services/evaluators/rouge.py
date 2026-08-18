@@ -20,6 +20,7 @@ class ROUGELvaluator(Evaluator):
 
     Characteristics:
         - Requires expected/reference output.
+        - Requires actual model output.
         - Does not require evaluation context.
         - Does not use an LLM.
         - Does not use embeddings.
@@ -46,6 +47,10 @@ class ROUGELvaluator(Evaluator):
                 "the model output and the reference answer using "
                 "deterministic ROUGE-L scoring."
             ),
+            required_inputs=(
+                "actual_output",
+                "expected_output",
+            ),
             requires_reference=True,
             requires_context=False,
             requires_llm=False,
@@ -55,6 +60,7 @@ class ROUGELvaluator(Evaluator):
                 "reference-based",
                 "lcs",
                 "rouge",
+                "rouge-l",
             ),
         )
 
@@ -63,7 +69,10 @@ class ROUGELvaluator(Evaluator):
         """
         Normalize Unicode and casing before tokenization.
         """
-        return unicodedata.normalize("NFKC", text).lower()
+        return unicodedata.normalize(
+            "NFKC",
+            text,
+        ).lower()
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
@@ -96,7 +105,10 @@ class ROUGELvaluator(Evaluator):
         for reference_token in reference_tokens:
             current = [0] * (len(actual_tokens) + 1)
 
-            for index, actual_token in enumerate(actual_tokens, start=1):
+            for index, actual_token in enumerate(
+                actual_tokens,
+                start=1,
+            ):
                 if reference_token == actual_token:
                     current[index] = previous[index - 1] + 1
                 else:
@@ -127,8 +139,13 @@ class ROUGELvaluator(Evaluator):
                 feedback="Expected output or actual output is missing.",
             )
 
-        reference_tokens = self._tokenize(expected_output)
-        actual_tokens = self._tokenize(actual_output)
+        reference_tokens = self._tokenize(
+            expected_output,
+        )
+
+        actual_tokens = self._tokenize(
+            actual_output,
+        )
 
         if not reference_tokens or not actual_tokens:
             return EvaluationScore(
@@ -146,7 +163,7 @@ class ROUGELvaluator(Evaluator):
             return EvaluationScore(
                 metric=self.name,
                 score=0.0,
-                feedback="No common subsequence between expected and actual output.",
+                feedback=("No common subsequence between expected and actual output."),
                 metadata={
                     "lcs_length": 0,
                     "precision": 0.0,
@@ -157,6 +174,7 @@ class ROUGELvaluator(Evaluator):
             )
 
         precision = lcs_length / len(actual_tokens)
+
         recall = lcs_length / len(reference_tokens)
 
         rouge_l = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0

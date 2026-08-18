@@ -1,3 +1,4 @@
+import unicodedata
 from typing import Any
 
 from app.services.evaluators.base import (
@@ -9,20 +10,33 @@ from app.services.evaluators.base import (
 
 class ExactMatchEvaluator(Evaluator):
     """
-    Exact-match evaluator.
+    Deterministic exact-match evaluator.
 
-    Compares the expected output with the actual model output after
-    trimming leading and trailing whitespace.
+    Compares the expected/reference output with the actual model output
+    after applying the evaluator's normalization rules.
 
-    Score:
-        1.0 -> outputs match exactly after stripping whitespace
-        0.0 -> outputs do not match
+    Normalization rules:
+        1. Unicode is normalized using NFKC.
+        2. Leading and trailing whitespace is removed.
+        3. Case is preserved.
+        4. Punctuation is preserved.
+        5. Internal whitespace is preserved.
 
-    This evaluator:
-        - requires an expected/reference output
-        - does not require evaluation context
-        - does not use an LLM
-        - is deterministic
+    Examples:
+
+        expected = "Paris"
+        actual   = "Paris"
+
+        score = 1.0
+
+        expected = "Paris"
+        actual   = " paris "
+
+        score = 0.0
+
+    This evaluator is intentionally strict after normalization.
+    It does not perform semantic matching, fuzzy matching, token
+    normalization, or case-insensitive comparison.
     """
 
     @property
@@ -33,13 +47,17 @@ class ExactMatchEvaluator(Evaluator):
     @property
     def metadata(self) -> EvaluatorMetadata:
         """
-        Return static metadata describing this evaluator.
+        Return static metadata describing the exact-match evaluator.
         """
         return EvaluatorMetadata(
             category="correctness",
             description=(
                 "Checks whether the model output exactly matches "
-                "the reference answer after trimming surrounding whitespace."
+                "the reference answer after applying normalization."
+            ),
+            required_inputs=(
+                "actual_output",
+                "expected_output",
             ),
             requires_reference=True,
             requires_context=False,
@@ -49,8 +67,26 @@ class ExactMatchEvaluator(Evaluator):
                 "deterministic",
                 "reference-based",
                 "exact-match",
+                "normalizable",
             ),
         )
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """
+        Apply the exact-match normalization rules.
+
+        Normalization intentionally:
+            - applies Unicode NFKC normalization
+            - strips leading/trailing whitespace
+            - preserves case
+            - preserves punctuation
+            - preserves internal whitespace
+        """
+        return unicodedata.normalize(
+            "NFKC",
+            text,
+        ).strip()
 
     async def evaluate(
         self,
@@ -60,8 +96,8 @@ class ExactMatchEvaluator(Evaluator):
         context: dict[str, Any] | None = None,
     ) -> EvaluationScore:
         """
-        Evaluate whether the actual output exactly matches
-        the expected output.
+        Evaluate whether the normalized actual output exactly matches
+        the normalized expected output.
         """
 
         if expected_output is None or actual_output is None:
@@ -71,8 +107,8 @@ class ExactMatchEvaluator(Evaluator):
                 feedback="Expected output or actual output is missing.",
             )
 
-        expected = expected_output.strip()
-        actual = actual_output.strip()
+        expected = self._normalize_text(expected_output)
+        actual = self._normalize_text(actual_output)
 
         score = 1.0 if expected == actual else 0.0
 
@@ -86,4 +122,13 @@ class ExactMatchEvaluator(Evaluator):
             metric=self.name,
             score=score,
             feedback=feedback,
+            metadata={
+                "normalization": {
+                    "unicode": "NFKC",
+                    "strip_surrounding_whitespace": True,
+                    "case_sensitive": True,
+                    "preserve_punctuation": True,
+                    "preserve_internal_whitespace": True,
+                },
+            },
         )

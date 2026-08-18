@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from app.services.evaluators.base import EvaluationScore, Evaluator
 from app.services.evaluators.registry import (
@@ -14,6 +15,32 @@ class FakeEvaluator(Evaluator):
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    def metadata(self):
+        """
+        Metadata required by EvaluatorApplicabilityService.
+
+        The applicability service accesses metadata using attributes
+        such as metadata.applicable_to and metadata.requires_reference,
+        so test evaluators must expose metadata as an object rather
+        than a plain dictionary.
+        """
+        return SimpleNamespace(
+            category="general",
+            description=f"Fake evaluator for {self._name}.",
+            required_inputs=[
+                "input",
+                "expected_output",
+                "actual_output",
+            ],
+            requires_reference=True,
+            requires_context=False,
+            requires_llm=False,
+            applicable_to=[
+                "text",
+            ],
+        )
 
     async def evaluate(
         self,

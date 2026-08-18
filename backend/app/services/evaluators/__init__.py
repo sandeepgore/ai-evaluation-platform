@@ -10,6 +10,10 @@ from app.services.evaluators.registry import (
 )
 from app.services.evaluators.relevance import RelevanceEvaluator
 from app.services.evaluators.rouge import ROUGELvaluator
+from app.services.evaluators.applicability import (
+    EvaluationCapabilities,
+    EvaluatorApplicabilityService,
+)
 
 __all__ = [
     "EvaluationScore",
@@ -23,4 +27,6 @@ __all__ = [
     "FaithfulnessEvaluator",
     "EvaluatorRegistry",
     "create_default_registry",
+    "EvaluationCapabilities",
+    "EvaluatorApplicabilityService",
 ]

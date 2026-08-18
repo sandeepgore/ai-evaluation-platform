@@ -90,6 +90,10 @@ class RelevanceEvaluator(Evaluator):
                 "Measures lexical coverage of meaningful query terms "
                 "in the model output using deterministic token overlap."
             ),
+            required_inputs=(
+                "actual_output",
+                "context",
+            ),
             requires_reference=False,
             requires_context=True,
             requires_llm=False,

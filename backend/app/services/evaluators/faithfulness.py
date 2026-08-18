@@ -113,6 +113,10 @@ class FaithfulnessEvaluator(Evaluator):
                 "Measures lexical support for model output terms against "
                 "the supplied evaluation context using deterministic token matching."
             ),
+            required_inputs=(
+                "actual_output",
+                "context",
+            ),
             requires_reference=False,
             requires_context=True,
             requires_llm=False,

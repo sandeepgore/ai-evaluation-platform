@@ -115,9 +115,15 @@ def test_rouge_metadata():
         "deterministic ROUGE-L scoring."
     )
 
+    assert metadata.required_inputs == (
+        "actual_output",
+        "expected_output",
+    )
+
     assert metadata.requires_reference is True
     assert metadata.requires_context is False
     assert metadata.requires_llm is False
+
     assert metadata.applicable_to == ("text",)
 
     assert metadata.tags == (
@@ -125,4 +131,5 @@ def test_rouge_metadata():
         "reference-based",
         "lcs",
         "rouge",
+        "rouge-l",
     )

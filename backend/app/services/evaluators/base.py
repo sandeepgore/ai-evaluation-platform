@@ -12,6 +12,7 @@ class EvaluatorMetadata:
         - evaluator discovery
         - evaluator categorization
         - evaluator descriptions
+        - required input declaration
         - applicability filtering
         - UI/API presentation
         - future evaluator configuration
@@ -22,6 +23,8 @@ class EvaluatorMetadata:
     category: str = "general"
 
     description: str = ""
+
+    required_inputs: tuple[str, ...] = field(default_factory=tuple)
 
     requires_reference: bool = False
     requires_context: bool = False
@@ -74,6 +77,7 @@ class Evaluator(ABC):
         - category
         - description
         - required inputs
+        - reference/context/LLM requirements
         - supported data types
         - tags
     """

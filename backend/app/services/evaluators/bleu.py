@@ -16,9 +16,6 @@ class BLEUEvaluator(Evaluator):
     Deterministic BLEU-4 evaluator for comparing generated text
     against a single reference answer.
 
-    BLEU measures n-gram overlap between generated output and
-    a reference answer.
-
     Characteristics:
         - Requires expected/reference output.
         - Does not require evaluation context.
@@ -47,6 +44,10 @@ class BLEUEvaluator(Evaluator):
                 "Measures n-gram overlap between the model output and "
                 "the reference answer using deterministic BLEU-4 scoring."
             ),
+            required_inputs=(
+                "actual_output",
+                "expected_output",
+            ),
             requires_reference=True,
             requires_context=False,
             requires_llm=False,
@@ -62,14 +63,20 @@ class BLEUEvaluator(Evaluator):
     @staticmethod
     def _normalize_text(text: str) -> str:
         """
-        Normalize Unicode and casing before tokenization.
+        Normalize text before tokenization.
+
+        Normalization:
+            1. Unicode NFKC normalization.
+            2. Lowercase conversion.
+
+        Punctuation is removed during tokenization.
         """
         return unicodedata.normalize("NFKC", text).lower()
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
         """
-        Tokenize text while ignoring punctuation.
+        Tokenize normalized text while ignoring punctuation.
         """
         normalized = cls._normalize_text(text)
 
@@ -204,5 +211,10 @@ class BLEUEvaluator(Evaluator):
                 "brevity_penalty": brevity_penalty,
                 "reference_length": reference_length,
                 "actual_length": actual_length,
+                "normalization": {
+                    "unicode": "NFKC",
+                    "lowercase": True,
+                    "ignore_punctuation": True,
+                },
             },
         )
