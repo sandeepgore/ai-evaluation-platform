@@ -9,7 +9,6 @@ class DatasetCaseCreate(BaseModel):
     input: str = Field(min_length=1)
     expected_output: str | None = None
     case_metadata: dict[str, Any] | None = None
-    position: int = Field(default=0, ge=0)
 
 
 class DatasetCaseUpdate(BaseModel):

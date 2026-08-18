@@ -4,8 +4,12 @@ from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_type import EvaluationType
 from app.services.evaluation_engine.engine import EvaluationEngine
-from app.services.evaluators.base import EvaluationScore
+from app.services.evaluators.base import (
+    EvaluationScore,
+    EvaluatorMetadata,
+)
 
 
 class FakeEvaluator:
@@ -16,6 +20,23 @@ class FakeEvaluator:
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    def metadata(self) -> EvaluatorMetadata:
+        return EvaluatorMetadata(
+            category="general",
+            description=f"Fake evaluator for {self._name}.",
+            required_inputs=[
+                "input",
+                "expected_output",
+                "actual_output",
+            ],
+            requires_reference=True,
+            requires_context=False,
+            requires_llm=False,
+            applicable_to=["text"],
+            tags=[],
+        )
 
     async def evaluate(
         self,
@@ -68,6 +89,7 @@ def create_run(
     *,
     model_id,
     dataset_version_id,
+    evaluation_type=EvaluationType.TEXT,
     execution_mode="sequential",
     batch_size=10,
 ):
@@ -75,6 +97,7 @@ def create_run(
         id=uuid4(),
         model_id=model_id,
         dataset_version_id=dataset_version_id,
+        evaluation_type=evaluation_type,
         configuration={
             "execution_mode": execution_mode,
             "batch_size": batch_size,
@@ -116,7 +139,11 @@ def create_response(output: str):
 def create_engine_mocks(model):
     db = MagicMock()
 
-    db.execute = AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: model))
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
@@ -162,6 +189,7 @@ async def test_engine_executes_evaluation_sequential():
     run = create_run(
         model_id=model.id,
         dataset_version_id=dataset_version_id,
+        evaluation_type=EvaluationType.TEXT,
         execution_mode="sequential",
     )
 
@@ -202,54 +230,36 @@ async def test_engine_executes_evaluation_sequential():
 
     assert model_gateway.generate.await_count == 2
 
+    expected_configuration = {
+        "execution_mode": "sequential",
+        "batch_size": 10,
+        "evaluators": [
+            {
+                "name": "exact_match",
+                "weight": 0.5,
+            },
+            {
+                "name": "f1",
+                "weight": 0.5,
+            },
+        ],
+        "scoring": {
+            "weights": {
+                "exact_match": 0.5,
+                "f1": 0.5,
+            }
+        },
+        "model": "mock-model",
+    }
+
     model_gateway.generate.assert_any_await(
         prompt="What is RAG?",
-        configuration={
-            "execution_mode": "sequential",
-            "batch_size": 10,
-            "evaluators": [
-                {
-                    "name": "exact_match",
-                    "weight": 0.5,
-                },
-                {
-                    "name": "f1",
-                    "weight": 0.5,
-                },
-            ],
-            "scoring": {
-                "weights": {
-                    "exact_match": 0.5,
-                    "f1": 0.5,
-                }
-            },
-            "model": "mock-model",
-        },
+        configuration=expected_configuration,
     )
 
     model_gateway.generate.assert_any_await(
         prompt="What is an LLM?",
-        configuration={
-            "execution_mode": "sequential",
-            "batch_size": 10,
-            "evaluators": [
-                {
-                    "name": "exact_match",
-                    "weight": 0.5,
-                },
-                {
-                    "name": "f1",
-                    "weight": 0.5,
-                },
-            ],
-            "scoring": {
-                "weights": {
-                    "exact_match": 0.5,
-                    "f1": 0.5,
-                }
-            },
-            "model": "mock-model",
-        },
+        configuration=expected_configuration,
     )
 
     model_gateway.generate_batch.assert_not_awaited()
@@ -282,6 +292,7 @@ async def test_engine_executes_evaluation_batch():
     run = create_run(
         model_id=model.id,
         dataset_version_id=dataset_version_id,
+        evaluation_type=EvaluationType.TEXT,
         execution_mode="batch",
         batch_size=10,
     )
@@ -375,6 +386,7 @@ async def test_engine_batch_respects_batch_size():
     run = create_run(
         model_id=model.id,
         dataset_version_id=dataset_version_id,
+        evaluation_type=EvaluationType.TEXT,
         execution_mode="batch",
         batch_size=2,
     )
@@ -454,6 +466,7 @@ async def test_engine_persists_scores_and_feedback():
     run = create_run(
         model_id=model.id,
         dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
         execution_mode="sequential",
     )
 
@@ -496,6 +509,6 @@ async def test_engine_persists_scores_and_feedback():
     assert saved_result["scores"]["f1"]["score"] == 0.5
     assert saved_result["scores"]["overall"]["score"] == 0.75
 
-    assert "exact_match: exact_match evaluated." in (saved_result["feedback"])
+    assert "exact_match: exact_match evaluated." in saved_result["feedback"]
 
     assert "f1: f1 evaluated." in saved_result["feedback"]

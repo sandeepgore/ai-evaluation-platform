@@ -14,6 +14,10 @@ from app.services.dataset_case import DatasetCaseService
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation_results import EvaluationResultService
 from app.services.evaluators import Evaluator, EvaluatorRegistry
+from app.services.evaluators.applicability import (
+    EvaluationCapabilities,
+    EvaluatorApplicabilityService,
+)
 from app.services.model_gateway import (
     ModelGateway,
     ModelGatewayFactory,
@@ -43,22 +47,132 @@ class EvaluationEngine:
         model_gateway: ModelGateway | None,
         evaluator_registry: EvaluatorRegistry,
         scoring_service: ScoringService,
+        applicability_service: EvaluatorApplicabilityService | None = None,
     ) -> None:
         self.db = db
         self.model_gateway = model_gateway
         self.evaluator_registry = evaluator_registry
+        self.applicability_service = applicability_service or EvaluatorApplicabilityService(
+            evaluator_registry
+        )
         self.scoring_service = scoring_service
 
     # ------------------------------------------------------------------
     # Configuration
     # ------------------------------------------------------------------
 
+    def _get_evaluation_capabilities(
+        self,
+        *,
+        run: EvaluationRun,
+        cases: list[Any],
+    ) -> EvaluationCapabilities:
+        """
+        Determine the capabilities available to the evaluation run.
+
+        Capabilities are derived from:
+
+        - evaluation type from EvaluationRun.evaluation_type
+        - reference availability from dataset cases
+        - context availability from dataset cases
+        - explicit evaluator-LLM availability from run configuration
+
+        The evaluated model gateway is intentionally not treated as an
+        evaluator LLM. A future LLM-based evaluator may use a separate
+        evaluator model/provider.
+        """
+
+        # --------------------------------------------------------------
+        # Evaluation type is now a first-class EvaluationRun field.
+        #
+        # Do NOT read evaluation_type from run.configuration.
+        # --------------------------------------------------------------
+
+        evaluation_type = run.evaluation_type.value
+
+        def has_reference(case: Any) -> bool:
+            expected_output = getattr(
+                case,
+                "expected_output",
+                None,
+            )
+
+            return isinstance(expected_output, str) and bool(expected_output.strip())
+
+        def has_context(case: Any) -> bool:
+            case_metadata = getattr(
+                case,
+                "case_metadata",
+                None,
+            )
+
+            if not isinstance(case_metadata, dict):
+                return False
+
+            for key in (
+                "context",
+                "retrieved_context",
+                "reference_context",
+            ):
+                value = case_metadata.get(key)
+
+                if isinstance(value, str):
+                    if value.strip():
+                        return True
+
+                elif isinstance(value, (list, tuple)):
+                    if any(isinstance(item, str) and item.strip() for item in value):
+                        return True
+
+            return False
+
+        # A capability is considered available only when every case
+        # required for the evaluation has that capability.
+        all_cases_have_reference = bool(cases) and all(has_reference(case) for case in cases)
+
+        all_cases_have_context = bool(cases) and all(has_context(case) for case in cases)
+
+        # The evaluator LLM is intentionally separate from the model
+        # being evaluated.
+        llm_available = False
+
+        if run.configuration:
+            configured_llm_available = run.configuration.get(
+                "llm_available",
+                False,
+            )
+
+            if not isinstance(
+                configured_llm_available,
+                bool,
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="'llm_available' must be a boolean.",
+                )
+
+            llm_available = configured_llm_available
+
+        return EvaluationCapabilities(
+            evaluation_type=evaluation_type,
+            has_reference=all_cases_have_reference,
+            has_context=all_cases_have_context,
+            llm_available=llm_available,
+        )
+
     def _get_evaluators(
         self,
         run: EvaluationRun,
+        capabilities: EvaluationCapabilities,
     ) -> list[tuple[Evaluator, float]]:
         """
-        Resolve evaluators configured for the evaluation run.
+        Resolve and validate evaluators configured for the evaluation run.
+
+        Evaluator metadata and applicability rules are delegated to
+        EvaluatorApplicabilityService.
+
+        The returned evaluator list preserves the configured order
+        and evaluator weights.
         """
 
         evaluator_config: Any = ["exact_match"]
@@ -69,14 +183,22 @@ class EvaluationEngine:
             if configured_evaluators:
                 evaluator_config = configured_evaluators
 
-        if not isinstance(evaluator_config, list):
+        if not isinstance(
+            evaluator_config,
+            list,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="'evaluators' must be a list.",
             )
 
-        evaluators: list[tuple[Evaluator, float]] = []
-        evaluator_names: set[str] = set()
+        if not evaluator_config:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one evaluator must be configured.",
+            )
+
+        parsed_configurations: list[tuple[str, float]] = []
 
         for item in evaluator_config:
             if isinstance(item, str):
@@ -87,13 +209,22 @@ class EvaluationEngine:
                 evaluator_name = item.get("name")
                 weight = item.get("weight", 1.0)
 
-                if not isinstance(evaluator_name, str):
+                if not isinstance(
+                    evaluator_name,
+                    str,
+                ):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=("Each evaluator configuration must contain a string 'name'."),
                     )
 
-                if not isinstance(weight, (int, float)):
+                if not isinstance(
+                    weight,
+                    (int, float),
+                ) or isinstance(
+                    weight,
+                    bool,
+                ):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=(f"Weight for evaluator '{evaluator_name}' must be a number."),
@@ -108,10 +239,12 @@ class EvaluationEngine:
                     ),
                 )
 
-            if evaluator_name in evaluator_names:
+            evaluator_name = evaluator_name.strip()
+
+            if not evaluator_name:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(f"Evaluator '{evaluator_name}' is configured more than once."),
+                    detail="Evaluator name must not be empty.",
                 )
 
             if weight <= 0:
@@ -120,21 +253,47 @@ class EvaluationEngine:
                     detail=(f"Weight for evaluator '{evaluator_name}' must be greater than zero."),
                 )
 
-            try:
-                evaluator = self.evaluator_registry.get(evaluator_name)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(exc),
-                ) from exc
+            parsed_configurations.append(
+                (
+                    evaluator_name,
+                    float(weight),
+                )
+            )
 
-            evaluator_names.add(evaluator_name)
-            evaluators.append((evaluator, float(weight)))
+        evaluator_names = [evaluator_name for evaluator_name, _weight in parsed_configurations]
 
-        if not evaluators:
+        try:
+            validated_evaluators = self.applicability_service.validate(
+                evaluator_names,
+                capabilities,
+            )
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="At least one evaluator must be configured.",
+                detail=str(exc),
+            ) from exc
+
+        if len(validated_evaluators) != len(parsed_configurations):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=("Evaluator validation returned an unexpected result."),
+            )
+
+        evaluators: list[tuple[Evaluator, float]] = []
+
+        for evaluator, (
+            _configured_name,
+            weight,
+        ) in zip(
+            validated_evaluators,
+            parsed_configurations,
+            strict=True,
+        ):
+            evaluators.append(
+                (
+                    evaluator,
+                    weight,
+                )
             )
 
         return evaluators
@@ -159,7 +318,10 @@ class EvaluationEngine:
             configured_mode = run.configuration.get("execution_mode")
 
             if configured_mode is not None:
-                if not isinstance(configured_mode, str):
+                if not isinstance(
+                    configured_mode,
+                    str,
+                ):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="'execution_mode' must be a string.",
@@ -167,7 +329,10 @@ class EvaluationEngine:
 
                 execution_mode = configured_mode.lower()
 
-        if execution_mode not in {"sequential", "batch"}:
+        if execution_mode not in {
+            "sequential",
+            "batch",
+        }:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=("'execution_mode' must be either 'sequential' or 'batch'."),
@@ -191,7 +356,10 @@ class EvaluationEngine:
             configured_batch_size = run.configuration.get("batch_size")
 
             if configured_batch_size is not None:
-                if not isinstance(configured_batch_size, int) or isinstance(
+                if not isinstance(
+                    configured_batch_size,
+                    int,
+                ) or isinstance(
                     configured_batch_size,
                     bool,
                 ):
@@ -203,7 +371,7 @@ class EvaluationEngine:
                 if configured_batch_size <= 0:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="'batch_size' must be greater than zero.",
+                        detail=("'batch_size' must be greater than zero."),
                     )
 
                 batch_size = configured_batch_size
@@ -296,7 +464,11 @@ class EvaluationEngine:
                 "input": case.input,
             }
 
-            case_metadata = getattr(case, "case_metadata", None)
+            case_metadata = getattr(
+                case,
+                "case_metadata",
+                None,
+            )
 
             if case_metadata:
                 evaluation_context.update(case_metadata)
@@ -452,10 +624,7 @@ class EvaluationEngine:
 
         await self.db.commit()
 
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-
+    # ------------------------------------------------------------------
     # Batch execution
     # ------------------------------------------------------------------
 
@@ -536,7 +705,10 @@ class EvaluationEngine:
             # Validate batch result
             # ----------------------------------------------------------
 
-            if not isinstance(batch_results, list):
+            if not isinstance(
+                batch_results,
+                list,
+            ):
                 batch_exc = RuntimeError("Model gateway returned an invalid batch response.")
 
                 for case in batch_cases:
@@ -588,7 +760,10 @@ class EvaluationEngine:
                     # )
                     # --------------------------------------------------
 
-                    if hasattr(result, "error") and hasattr(
+                    if hasattr(
+                        result,
+                        "error",
+                    ) and hasattr(
                         result,
                         "response",
                     ):
@@ -721,10 +896,13 @@ class EvaluationEngine:
             )
 
         # --------------------------------------------------------------
-        # 3. Resolve configuration
+        # 3. Resolve execution configuration
+        #
+        # Evaluators are intentionally resolved later, after dataset
+        # cases are loaded, because applicability depends on the
+        # available reference/context capabilities.
         # --------------------------------------------------------------
 
-        evaluator_configs = self._get_evaluators(run)
         execution_mode = self._get_execution_mode(run)
         batch_size = self._get_batch_size(run)
 
@@ -776,7 +954,25 @@ class EvaluationEngine:
         run.failed_cases = 0
 
         # --------------------------------------------------------------
-        # 7. Start evaluation timing
+        # 7. Determine evaluation capabilities
+        # --------------------------------------------------------------
+
+        evaluation_capabilities = self._get_evaluation_capabilities(
+            run=run,
+            cases=cases,
+        )
+
+        # --------------------------------------------------------------
+        # 8. Resolve and validate evaluators
+        # --------------------------------------------------------------
+
+        evaluator_configs = self._get_evaluators(
+            run,
+            evaluation_capabilities,
+        )
+
+        # --------------------------------------------------------------
+        # 9. Start evaluation timing
         # --------------------------------------------------------------
 
         started_at = self._utc_now()
@@ -791,7 +987,7 @@ class EvaluationEngine:
         await self.db.refresh(run)
 
         # --------------------------------------------------------------
-        # 8. Execute evaluation
+        # 10. Execute evaluation
         # --------------------------------------------------------------
 
         try:
@@ -815,7 +1011,7 @@ class EvaluationEngine:
                 )
 
             # ----------------------------------------------------------
-            # 9. Complete evaluation run
+            # 11. Complete evaluation run
             # ----------------------------------------------------------
 
             completed_at = self._utc_now()
@@ -834,7 +1030,7 @@ class EvaluationEngine:
 
         except Exception:
             # ----------------------------------------------------------
-            # 10. Unexpected engine-level failure
+            # 12. Unexpected engine-level failure
             # ----------------------------------------------------------
 
             completed_at = self._utc_now()

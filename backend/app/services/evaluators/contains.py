@@ -49,6 +49,10 @@ class ContainsEvaluator(Evaluator):
                 "within the model output using case-insensitive "
                 "substring matching."
             ),
+            required_inputs=(
+                "actual_output",
+                "expected_output",
+            ),
             requires_reference=True,
             requires_context=False,
             requires_llm=False,
@@ -103,6 +107,12 @@ class ContainsEvaluator(Evaluator):
                 metric=self.name,
                 score=0.0,
                 feedback="Expected output is empty.",
+                metadata={
+                    "normalization": {
+                        "lowercase": True,
+                        "strip_whitespace": True,
+                    },
+                },
             )
 
         score = 1.0 if expected in actual else 0.0
@@ -117,4 +127,10 @@ class ContainsEvaluator(Evaluator):
             metric=self.name,
             score=score,
             feedback=feedback,
+            metadata={
+                "normalization": {
+                    "lowercase": True,
+                    "strip_whitespace": True,
+                },
+            },
         )

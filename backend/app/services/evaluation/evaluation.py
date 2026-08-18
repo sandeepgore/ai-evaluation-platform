@@ -91,6 +91,10 @@ class EvaluationRunService:
             model_id=data.model_id,
             name=data.name,
             status=EvaluationRunStatus.PENDING,
+            # ----------------------------------------------------------
+            # Evaluation type
+            # ----------------------------------------------------------
+            evaluation_type=data.evaluation_type,
             configuration=data.configuration,
             summary_feedback=None,
             total_cases=dataset_version.case_count,

@@ -10,6 +10,7 @@ from app.services.evaluation_engine.engine import EvaluationEngine
 from app.services.evaluation_engine import engine as engine_module
 
 from tests.services.evaluation_engine.test_engine import FakeRegistry
+from app.models.evaluation.evaluation_type import EvaluationType
 
 
 @pytest.mark.asyncio
@@ -47,6 +48,7 @@ async def test_engine_handles_batch_inference_failure_and_continues():
         id=run_id,
         model_id=model_id,
         dataset_version_id=dataset_version_id,
+        evaluation_type=EvaluationType.TEXT,
         configuration={
             "execution_mode": "batch",
             "batch_size": 5,
@@ -292,6 +294,7 @@ async def test_engine_isolates_individual_batch_item_failure():
         id=run_id,
         model_id=model_id,
         dataset_version_id=dataset_version_id,
+        evaluation_type=EvaluationType.TEXT,
         configuration={
             "execution_mode": "batch",
             "batch_size": 3,
