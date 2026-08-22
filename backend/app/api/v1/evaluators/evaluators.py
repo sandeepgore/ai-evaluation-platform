@@ -23,6 +23,7 @@ async def list_evaluators(
     requires_context: bool | None = Query(None),
     requires_llm: bool | None = Query(None),
     applicable_to: str | None = Query(None),
+    required_input: str | None = Query(None),
     tag: str | None = Query(None),
 ) -> EvaluatorListResponse:
     """
@@ -37,6 +38,7 @@ async def list_evaluators(
         requires_context=requires_context,
         requires_llm=requires_llm,
         applicable_to=applicable_to,
+        required_input=required_input,
         tag=tag,
     )
 
@@ -46,6 +48,7 @@ async def list_evaluators(
                 name=evaluator.name,
                 category=evaluator.metadata.category,
                 description=evaluator.metadata.description,
+                required_inputs=list(evaluator.metadata.required_inputs),
                 requires_reference=evaluator.metadata.requires_reference,
                 requires_context=evaluator.metadata.requires_context,
                 requires_llm=evaluator.metadata.requires_llm,
@@ -85,6 +88,7 @@ async def get_evaluator(
         name=evaluator.name,
         category=metadata.category,
         description=metadata.description,
+        required_inputs=list(metadata.required_inputs),
         requires_reference=metadata.requires_reference,
         requires_context=metadata.requires_context,
         requires_llm=metadata.requires_llm,

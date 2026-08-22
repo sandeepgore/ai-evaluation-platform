@@ -148,7 +148,7 @@ def test_faithfulness_metadata():
     assert metadata.requires_reference is False
     assert metadata.requires_context is True
     assert metadata.requires_llm is False
-    assert metadata.applicable_to == ("text",)
+    assert metadata.applicable_to == ("rag",)
 
     assert metadata.tags == (
         "deterministic",

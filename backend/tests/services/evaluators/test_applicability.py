@@ -46,7 +46,7 @@ def test_reference_evaluator_is_rejected_without_reference(service):
 
 def test_context_evaluator_is_rejected_without_context(service):
     capabilities = EvaluationCapabilities(
-        evaluation_type="text",
+        evaluation_type="rag",
         has_reference=False,
         has_context=False,
         llm_available=False,
@@ -61,7 +61,7 @@ def test_context_evaluator_is_rejected_without_context(service):
 
 def test_context_evaluator_is_allowed_with_context(service):
     capabilities = EvaluationCapabilities(
-        evaluation_type="text",
+        evaluation_type="rag",
         has_reference=False,
         has_context=True,
         llm_available=False,
@@ -174,3 +174,100 @@ def test_configuration_supports_object_evaluators(service):
         "exact_match",
         "f1",
     ]
+
+
+# ============================================================================
+# Applicable Evaluator Discovery
+# ============================================================================
+
+
+def test_get_applicable_evaluators_returns_reference_evaluators(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="text",
+        has_reference=True,
+        has_context=False,
+        llm_available=False,
+    )
+
+    evaluators = service.get_applicable_evaluators(
+        capabilities,
+    )
+
+    assert [evaluator.name for evaluator in evaluators] == [
+        "exact_match",
+        "contains",
+        "f1",
+        "bleu",
+        "rouge_l",
+    ]
+
+
+def test_get_applicable_evaluators_returns_context_evaluators(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="rag",
+        has_reference=False,
+        has_context=True,
+        llm_available=False,
+    )
+
+    evaluators = service.get_applicable_evaluators(
+        capabilities,
+    )
+
+    assert [evaluator.name for evaluator in evaluators] == [
+        "relevance",
+        "faithfulness",
+    ]
+
+
+def test_get_applicable_evaluators_returns_reference_and_context_evaluators(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="rag",
+        has_reference=True,
+        has_context=True,
+        llm_available=False,
+    )
+
+    evaluators = service.get_applicable_evaluators(
+        capabilities,
+    )
+
+    assert [evaluator.name for evaluator in evaluators] == [
+        "exact_match",
+        "f1",
+        "relevance",
+        "faithfulness",
+    ]
+
+
+def test_get_applicable_evaluators_deduplicates_aliases(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="text",
+        has_reference=True,
+        has_context=False,
+        llm_available=False,
+    )
+
+    evaluators = service.get_applicable_evaluators(
+        capabilities,
+    )
+
+    evaluator_names = [evaluator.name for evaluator in evaluators]
+
+    assert evaluator_names.count("rouge_l") == 1
+    assert "rouge" not in evaluator_names
+
+
+def test_get_applicable_evaluators_excludes_incompatible_evaluators(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="text",
+        has_reference=False,
+        has_context=False,
+        llm_available=False,
+    )
+
+    evaluators = service.get_applicable_evaluators(
+        capabilities,
+    )
+
+    assert evaluators == []

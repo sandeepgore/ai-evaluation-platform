@@ -62,7 +62,7 @@ class ExactMatchEvaluator(Evaluator):
             requires_reference=True,
             requires_context=False,
             requires_llm=False,
-            applicable_to=("text",),
+            applicable_to=("text", "rag"),
             tags=(
                 "deterministic",
                 "reference-based",

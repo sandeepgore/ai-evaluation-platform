@@ -23,6 +23,7 @@ from app.services.model_gateway import (
     ModelGatewayFactory,
 )
 from app.services.scoring import ScoringService
+from app.services.evaluation.dataset_capability import DatasetCapabilityAnalyzer
 
 
 class EvaluationEngine:
@@ -70,70 +71,65 @@ class EvaluationEngine:
         """
         Determine the capabilities available to the evaluation run.
 
-        Capabilities are derived from:
+        Dataset capabilities are delegated to DatasetCapabilityAnalyzer.
 
-        - evaluation type from EvaluationRun.evaluation_type
-        - reference availability from dataset cases
-        - context availability from dataset cases
-        - explicit evaluator-LLM availability from run configuration
+        A capability is considered available for evaluator applicability
+        only when every case in the evaluation dataset provides it.
 
-        The evaluated model gateway is intentionally not treated as an
-        evaluator LLM. A future LLM-based evaluator may use a separate
-        evaluator model/provider.
+        The evaluator LLM remains separate from the model being evaluated.
         """
 
         # --------------------------------------------------------------
-        # Evaluation type is now a first-class EvaluationRun field.
-        #
-        # Do NOT read evaluation_type from run.configuration.
+        # Evaluation type
         # --------------------------------------------------------------
 
         evaluation_type = run.evaluation_type.value
 
-        def has_reference(case: Any) -> bool:
-            expected_output = getattr(
-                case,
-                "expected_output",
-                None,
-            )
+        # --------------------------------------------------------------
+        # Analyze dataset capabilities
+        # --------------------------------------------------------------
 
-            return isinstance(expected_output, str) and bool(expected_output.strip())
+        dataset_capabilities = DatasetCapabilityAnalyzer.analyze(cases)
 
-        def has_context(case: Any) -> bool:
-            case_metadata = getattr(
-                case,
-                "case_metadata",
-                None,
-            )
+        # --------------------------------------------------------------
+        # Applicability requires dataset-wide capability coverage.
+        #
+        # Example:
+        #   20 cases
+        #   18 have references
+        #
+        # has_reference must be False because an evaluator requiring
+        # reference cannot safely run across the entire evaluation.
+        # --------------------------------------------------------------
 
-            if not isinstance(case_metadata, dict):
-                return False
+        has_reference = dataset_capabilities.all_cases_have_reference
+        has_context = dataset_capabilities.all_cases_have_context
 
-            for key in (
-                "context",
-                "retrieved_context",
-                "reference_context",
-            ):
-                value = case_metadata.get(key)
+        # --------------------------------------------------------------
+        # Available evaluator inputs
+        #
+        # actual_output is produced by the model during evaluation.
+        #
+        # expected_output and context come from the dataset and are only
+        # considered available when every case provides them.
+        # --------------------------------------------------------------
 
-                if isinstance(value, str):
-                    if value.strip():
-                        return True
+        available_inputs: set[str] = {
+            "actual_output",
+        }
 
-                elif isinstance(value, (list, tuple)):
-                    if any(isinstance(item, str) and item.strip() for item in value):
-                        return True
+        if has_reference:
+            available_inputs.add("expected_output")
 
-            return False
+        if has_context:
+            available_inputs.add("context")
 
-        # A capability is considered available only when every case
-        # required for the evaluation has that capability.
-        all_cases_have_reference = bool(cases) and all(has_reference(case) for case in cases)
+        # --------------------------------------------------------------
+        # Evaluator LLM availability
+        #
+        # This is intentionally independent from the model being evaluated.
+        # --------------------------------------------------------------
 
-        all_cases_have_context = bool(cases) and all(has_context(case) for case in cases)
-
-        # The evaluator LLM is intentionally separate from the model
-        # being evaluated.
         llm_available = False
 
         if run.configuration:
@@ -155,9 +151,40 @@ class EvaluationEngine:
 
         return EvaluationCapabilities(
             evaluation_type=evaluation_type,
-            has_reference=all_cases_have_reference,
-            has_context=all_cases_have_context,
+            has_reference=has_reference,
+            has_context=has_context,
             llm_available=llm_available,
+            available_inputs=frozenset(available_inputs),
+        )
+
+    def _get_default_evaluator_names(
+        self,
+        evaluation_type: str,
+    ) -> list[str]:
+        """
+        Return the default evaluators for an evaluation type.
+
+        Explicit evaluator configuration always takes precedence.
+        """
+
+        defaults = {
+            "text": [
+                "exact_match",
+                "contains",
+                "f1",
+                "bleu",
+                "rouge_l",
+            ],
+            "rag": [
+                "relevance",
+                "faithfulness",
+                "f1",
+            ],
+        }
+
+        return defaults.get(
+            evaluation_type,
+            ["exact_match"],
         )
 
     def _get_evaluators(
@@ -175,7 +202,11 @@ class EvaluationEngine:
         and evaluator weights.
         """
 
-        evaluator_config: Any = ["exact_match"]
+        evaluation_type = run.evaluation_type.value
+
+        evaluator_config: list[str | dict[str, Any]] = self._get_default_evaluator_names(
+            evaluation_type
+        )
 
         if run.configuration:
             configured_evaluators = run.configuration.get("evaluators")
@@ -494,16 +525,22 @@ class EvaluationEngine:
         scoring_configuration: dict[str, Any] = {}
 
         if run.configuration:
-            scoring_configuration = run.configuration.get(
+            configured_scoring = run.configuration.get(
                 "scoring",
                 {},
             )
+
+            if isinstance(configured_scoring, dict):
+                scoring_configuration = configured_scoring.copy()
+
+        scoring_configuration["weights"] = {
+            evaluator.name: weight for evaluator, weight in evaluator_configs
+        }
 
         scoring_result = self.scoring_service.calculate(
             scores=scores,
             configuration=scoring_configuration,
         )
-
         scores["overall"] = {
             "score": scoring_result.score,
             "metadata": scoring_result.metadata,

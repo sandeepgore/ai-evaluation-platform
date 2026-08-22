@@ -15,9 +15,12 @@ class EvaluationCapabilities:
     """
 
     evaluation_type: str = "text"
+
     has_reference: bool = False
     has_context: bool = False
     llm_available: bool = False
+
+    available_inputs: frozenset[str] = frozenset()
 
 
 class EvaluatorApplicabilityService:
@@ -36,19 +39,8 @@ class EvaluatorApplicabilityService:
         evaluator: Evaluator,
         capabilities: EvaluationCapabilities,
     ) -> tuple[bool, str | None]:
-        """
-        Check whether one evaluator is applicable.
-
-        Returns:
-            (True, None) when applicable.
-            (False, reason) when not applicable.
-        """
 
         metadata = evaluator.metadata
-
-        # --------------------------------------------------------------
-        # Evaluation type
-        # --------------------------------------------------------------
 
         if metadata.applicable_to and capabilities.evaluation_type not in metadata.applicable_to:
             return (
@@ -60,10 +52,6 @@ class EvaluatorApplicabilityService:
                 ),
             )
 
-        # --------------------------------------------------------------
-        # Reference requirement
-        # --------------------------------------------------------------
-
         if metadata.requires_reference and not capabilities.has_reference:
             return (
                 False,
@@ -72,10 +60,6 @@ class EvaluatorApplicabilityService:
                     "answer, but no reference is available."
                 ),
             )
-
-        # --------------------------------------------------------------
-        # Context requirement
-        # --------------------------------------------------------------
 
         if metadata.requires_context and not capabilities.has_context:
             return (
@@ -86,17 +70,63 @@ class EvaluatorApplicabilityService:
                 ),
             )
 
-        # --------------------------------------------------------------
-        # LLM requirement
-        # --------------------------------------------------------------
-
         if metadata.requires_llm and not capabilities.llm_available:
             return (
                 False,
-                (f"Evaluator '{evaluator.name}' requires an LLM, but no LLM is available."),
+                f"Evaluator '{evaluator.name}' requires an LLM, but no LLM is available.",
             )
 
         return True, None
+
+    def get_applicable_evaluators(
+        self,
+        capabilities: EvaluationCapabilities,
+    ) -> list[Evaluator]:
+        """
+        Return all evaluators applicable to the supplied capabilities.
+
+        Evaluators are returned using their canonical names.
+
+        Registry aliases are automatically deduplicated.
+
+        The evaluator registry remains the single source of truth for
+        evaluator discovery.
+        """
+
+        applicable_evaluators: list[Evaluator] = []
+        seen_names: set[str] = set()
+
+        for name in self.registry.list_names():
+            evaluator = self.registry.get(name)
+
+            canonical_name = evaluator.name
+
+            # ----------------------------------------------------------
+            # Avoid returning the same evaluator more than once when
+            # multiple registry names point to the same evaluator.
+            #
+            # Example:
+            #   rouge
+            #   rouge_l
+            #
+            # Both resolve to the canonical evaluator "rouge_l".
+            # ----------------------------------------------------------
+
+            if canonical_name in seen_names:
+                continue
+
+            applicable, _ = self.is_applicable(
+                evaluator,
+                capabilities,
+            )
+
+            if not applicable:
+                continue
+
+            seen_names.add(canonical_name)
+            applicable_evaluators.append(evaluator)
+
+        return applicable_evaluators
 
     def validate(
         self,

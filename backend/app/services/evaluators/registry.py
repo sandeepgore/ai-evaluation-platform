@@ -1,3 +1,5 @@
+from typing import Any
+
 from app.services.evaluators.base import Evaluator
 from app.services.evaluators.bleu import BLEUEvaluator
 from app.services.evaluators.contains import ContainsEvaluator
@@ -88,6 +90,63 @@ class EvaluatorRegistry:
         Return all registered evaluator names and aliases.
         """
         return list(self._evaluators.keys())
+
+    def list_evaluators(self) -> list[Evaluator]:
+        """
+        Return all registered evaluator instances.
+
+        Aliases are excluded from discovery results.
+
+        Example:
+            rouge_l
+            rouge
+
+        Both point to the same ROUGELvaluator instance, so only
+        the canonical evaluator is returned once.
+        """
+        evaluators: list[Evaluator] = []
+        seen: set[int] = set()
+
+        for evaluator in self._evaluators.values():
+            evaluator_id = id(evaluator)
+
+            if evaluator_id in seen:
+                continue
+
+            seen.add(evaluator_id)
+            evaluators.append(evaluator)
+
+        return evaluators
+
+    def list_metadata(self) -> list[dict[str, Any]]:
+        """
+        Return metadata for all registered evaluators.
+
+        Aliases are automatically deduplicated.
+
+        The canonical evaluator name comes from Evaluator.name,
+        while the remaining metadata comes from Evaluator.metadata.
+        """
+        metadata: list[dict[str, Any]] = []
+
+        for evaluator in self.list_evaluators():
+            evaluator_metadata = evaluator.metadata
+
+            metadata.append(
+                {
+                    "name": evaluator.name,
+                    "category": evaluator_metadata.category,
+                    "description": evaluator_metadata.description,
+                    "required_inputs": list(evaluator_metadata.required_inputs),
+                    "requires_reference": evaluator_metadata.requires_reference,
+                    "requires_context": evaluator_metadata.requires_context,
+                    "requires_llm": evaluator_metadata.requires_llm,
+                    "applicable_to": list(evaluator_metadata.applicable_to),
+                    "tags": list(evaluator_metadata.tags),
+                }
+            )
+
+        return metadata
 
 
 def create_default_registry() -> EvaluatorRegistry:

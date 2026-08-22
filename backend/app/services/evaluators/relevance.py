@@ -97,7 +97,7 @@ class RelevanceEvaluator(Evaluator):
             requires_reference=False,
             requires_context=True,
             requires_llm=False,
-            applicable_to=("text",),
+            applicable_to=("rag",),
             tags=(
                 "deterministic",
                 "context-based",
