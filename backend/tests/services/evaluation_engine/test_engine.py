@@ -30,7 +30,6 @@ class FakeEvaluator:
             category="general",
             description=f"Fake evaluator for {self._name}.",
             required_inputs=[
-                "input",
                 "expected_output",
                 "actual_output",
             ],

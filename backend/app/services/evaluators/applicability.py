@@ -12,6 +12,9 @@ class EvaluationCapabilities:
 
     These capabilities describe the inputs/resources available to the
     selected evaluators.
+
+    High-level capabilities such as `has_reference` and `has_context`
+    are translated into evaluator inputs by the applicability service.
     """
 
     evaluation_type: str = "text"
@@ -20,6 +23,7 @@ class EvaluationCapabilities:
     has_context: bool = False
     llm_available: bool = False
 
+    # Optional explicit inputs for future/custom evaluator requirements.
     available_inputs: frozenset[str] = frozenset()
 
 
@@ -34,13 +38,59 @@ class EvaluatorApplicabilityService:
     def __init__(self, registry: EvaluatorRegistry) -> None:
         self.registry = registry
 
+    def _get_available_inputs(
+        self,
+        capabilities: EvaluationCapabilities,
+    ) -> set[str]:
+        """
+        Resolve the concrete evaluator inputs available from the
+        high-level evaluation capabilities.
+
+        The evaluation engine always provides `actual_output`.
+
+        `expected_output` is available when the dataset contains
+        reference answers.
+
+        `context` is available when the dataset contains evaluation
+        context.
+
+        Explicit `available_inputs` can be used for future/custom
+        evaluator inputs.
+        """
+
+        available_inputs = set(capabilities.available_inputs)
+
+        # Every evaluator evaluates a model-generated output.
+        available_inputs.add("actual_output")
+
+        if capabilities.has_reference:
+            available_inputs.add("expected_output")
+
+        if capabilities.has_context:
+            available_inputs.add("context")
+
+        return available_inputs
+
     def is_applicable(
         self,
         evaluator: Evaluator,
         capabilities: EvaluationCapabilities,
     ) -> tuple[bool, str | None]:
+        """
+        Determine whether an evaluator is applicable to the supplied
+        evaluation capabilities.
+
+        Returns:
+            (True, None) when applicable.
+
+            (False, reason) when the evaluator cannot safely be used.
+        """
 
         metadata = evaluator.metadata
+
+        # --------------------------------------------------------------
+        # 1. Validate evaluation type.
+        # --------------------------------------------------------------
 
         if metadata.applicable_to and capabilities.evaluation_type not in metadata.applicable_to:
             return (
@@ -51,6 +101,16 @@ class EvaluatorApplicabilityService:
                     f"Supported types: {list(metadata.applicable_to)}."
                 ),
             )
+
+        # --------------------------------------------------------------
+        # 2. Validate high-level resource requirements first.
+        #
+        # This produces meaningful errors such as:
+        #   "requires a reference"
+        #   "requires evaluation context"
+        #
+        # instead of a lower-level missing-input error.
+        # --------------------------------------------------------------
 
         if metadata.requires_reference and not capabilities.has_reference:
             return (
@@ -74,6 +134,25 @@ class EvaluatorApplicabilityService:
             return (
                 False,
                 f"Evaluator '{evaluator.name}' requires an LLM, but no LLM is available.",
+            )
+
+        # --------------------------------------------------------------
+        # 3. Resolve concrete evaluator inputs.
+        # --------------------------------------------------------------
+
+        available_inputs = self._get_available_inputs(capabilities)
+
+        required_inputs = set(metadata.required_inputs)
+
+        missing_inputs = required_inputs - available_inputs
+
+        if missing_inputs:
+            return (
+                False,
+                (
+                    f"Evaluator '{evaluator.name}' requires inputs "
+                    f"{sorted(missing_inputs)}, but they are not available."
+                ),
             )
 
         return True, None
@@ -109,7 +188,7 @@ class EvaluatorApplicabilityService:
             #   rouge
             #   rouge_l
             #
-            # Both resolve to the canonical evaluator "rouge_l".
+            # Both resolve to canonical evaluator "rouge_l".
             # ----------------------------------------------------------
 
             if canonical_name in seen_names:
@@ -152,9 +231,6 @@ class EvaluatorApplicabilityService:
         for name in evaluator_names:
             # ----------------------------------------------------------
             # Resolve evaluator through the registry.
-            #
-            # EvaluatorRegistry.get() raises ValueError for unknown
-            # evaluators, so explicitly handle that contract here.
             # ----------------------------------------------------------
 
             try:

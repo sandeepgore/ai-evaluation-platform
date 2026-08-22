@@ -234,6 +234,7 @@ def test_get_applicable_evaluators_returns_reference_and_context_evaluators(serv
 
     assert [evaluator.name for evaluator in evaluators] == [
         "exact_match",
+        "contains",
         "f1",
         "relevance",
         "faithfulness",
