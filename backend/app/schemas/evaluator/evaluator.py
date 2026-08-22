@@ -6,6 +6,8 @@ class EvaluatorResponse(BaseModel):
     category: str
     description: str
 
+    required_inputs: list[str]
+
     requires_reference: bool
     requires_context: bool
     requires_llm: bool

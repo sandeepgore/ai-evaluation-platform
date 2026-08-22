@@ -181,3 +181,82 @@ def test_default_registry_returns_evaluator(name: str):
 
     assert evaluator is not None
     assert isinstance(evaluator, Evaluator)
+
+
+def test_registry_list_evaluators_returns_canonical_evaluators():
+    registry = create_default_registry()
+
+    evaluators = registry.list_evaluators()
+
+    names = [evaluator.name for evaluator in evaluators]
+
+    assert names == [
+        "exact_match",
+        "contains",
+        "f1",
+        "bleu",
+        "rouge_l",
+        "relevance",
+        "faithfulness",
+    ]
+
+
+def test_registry_list_evaluators_deduplicates_aliases():
+    registry = create_default_registry()
+
+    evaluators = registry.list_evaluators()
+
+    names = [evaluator.name for evaluator in evaluators]
+
+    assert names.count("rouge_l") == 1
+    assert "rouge" not in names
+
+
+def test_registry_list_metadata_returns_all_metadata():
+    registry = create_default_registry()
+
+    metadata = registry.list_metadata()
+
+    names = [item["name"] for item in metadata]
+
+    assert names == [
+        "exact_match",
+        "contains",
+        "f1",
+        "bleu",
+        "rouge_l",
+        "relevance",
+        "faithfulness",
+    ]
+
+
+def test_registry_list_metadata_contains_expected_fields():
+    registry = create_default_registry()
+
+    metadata = registry.list_metadata()
+
+    expected_fields = {
+        "name",
+        "category",
+        "description",
+        "required_inputs",
+        "requires_reference",
+        "requires_context",
+        "requires_llm",
+        "applicable_to",
+        "tags",
+    }
+
+    for item in metadata:
+        assert set(item.keys()) == expected_fields
+
+
+def test_registry_list_metadata_deduplicates_aliases():
+    registry = create_default_registry()
+
+    metadata = registry.list_metadata()
+
+    names = [item["name"] for item in metadata]
+
+    assert names.count("rouge_l") == 1
+    assert "rouge" not in names

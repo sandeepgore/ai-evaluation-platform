@@ -10,6 +10,9 @@ from app.services.evaluators.base import (
     EvaluationScore,
     EvaluatorMetadata,
 )
+from fastapi import HTTPException
+
+from app.services.evaluators.registry import create_default_registry
 
 
 class FakeEvaluator:
@@ -512,3 +515,157 @@ async def test_engine_persists_scores_and_feedback():
     assert "exact_match: exact_match evaluated." in saved_result["feedback"]
 
     assert "f1: f1 evaluated." in saved_result["feedback"]
+
+
+@pytest.mark.asyncio
+async def test_engine_rejects_reference_evaluator_without_reference_before_model_execution():
+    """
+    A reference-dependent evaluator must be rejected before model execution
+    when the dataset contains no usable reference output.
+    """
+
+    model = create_model()
+    dataset_version_id = uuid4()
+
+    case = SimpleNamespace(
+        id=uuid4(),
+        input="What is RAG?",
+        expected_output=None,
+        case_metadata=None,
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=dataset_version_id,
+        execution_mode="sequential",
+    )
+
+    run.configuration["evaluators"] = [
+        {
+            "name": "exact_match",
+            "weight": 1.0,
+        }
+    ]
+
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock()
+
+    scoring_service = MagicMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=create_default_registry(),
+        scoring_service=scoring_service,
+    )
+
+    from app.services.evaluation_engine import engine as engine_module
+
+    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+
+    engine_module.DatasetCaseService.list = AsyncMock(return_value=[case])
+
+    engine_module.EvaluationResultService.create = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await engine.execute(run.id)
+
+    assert exc_info.value.status_code == 400
+    assert "reference" in str(exc_info.value.detail).lower()
+
+    # Validation must happen before the run enters RUNNING.
+    assert run.status == EvaluationRunStatus.PENDING
+
+    # Most importantly: model inference must never start.
+    model_gateway.generate.assert_not_awaited()
+    model_gateway.generate_batch.assert_not_awaited()
+
+    # No evaluation result should be persisted because no model execution
+    # took place.
+    engine_module.EvaluationResultService.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_engine_rejects_context_evaluator_without_context_before_model_execution():
+    """
+    A context-dependent evaluator must be rejected before model execution
+    when the dataset contains no usable context.
+    """
+
+    model = create_model()
+    dataset_version_id = uuid4()
+
+    case = SimpleNamespace(
+        id=uuid4(),
+        input="What is RAG?",
+        expected_output="RAG combines retrieval and generation.",
+        case_metadata=None,
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=dataset_version_id,
+        execution_mode="sequential",
+        evaluation_type=EvaluationType.RAG,
+    )
+
+    run.configuration["evaluators"] = [
+        {
+            "name": "faithfulness",
+            "weight": 1.0,
+        }
+    ]
+
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock()
+
+    scoring_service = MagicMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=create_default_registry(),
+        scoring_service=scoring_service,
+    )
+
+    from app.services.evaluation_engine import engine as engine_module
+
+    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+
+    engine_module.DatasetCaseService.list = AsyncMock(return_value=[case])
+
+    engine_module.EvaluationResultService.create = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await engine.execute(run.id)
+
+    assert exc_info.value.status_code == 400
+    assert "context" in str(exc_info.value.detail).lower()
+
+    # The engine must reject the configuration before execution starts.
+    assert run.status == EvaluationRunStatus.PENDING
+
+    model_gateway.generate.assert_not_awaited()
+    model_gateway.generate_batch.assert_not_awaited()
+
+    engine_module.EvaluationResultService.create.assert_not_awaited()
