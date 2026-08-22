@@ -108,7 +108,7 @@ def test_contains_metadata():
     assert metadata.requires_context is False
     assert metadata.requires_llm is False
 
-    assert metadata.applicable_to == ("text",)
+    assert metadata.applicable_to == ("text", "rag")
 
     assert metadata.tags == (
         "deterministic",
