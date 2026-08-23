@@ -14,6 +14,7 @@ from app.services.evaluators.applicability import (
     EvaluationCapabilities,
     EvaluatorApplicabilityService,
 )
+from app.services.evaluators.llm_judge import LLMJudgeEvaluator
 
 __all__ = [
     "EvaluationScore",
@@ -29,4 +30,5 @@ __all__ = [
     "create_default_registry",
     "EvaluationCapabilities",
     "EvaluatorApplicabilityService",
+    "LLMJudgeEvaluator",
 ]

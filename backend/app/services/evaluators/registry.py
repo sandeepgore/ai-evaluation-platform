@@ -8,14 +8,21 @@ from app.services.evaluators.f1 import F1Evaluator
 from app.services.evaluators.faithfulness import FaithfulnessEvaluator
 from app.services.evaluators.relevance import RelevanceEvaluator
 from app.services.evaluators.rouge import ROUGELvaluator
+from app.services.evaluators.llm_judge import LLMJudgeEvaluator
+from app.services.model_gateway import ModelGateway
 
 
 class EvaluatorRegistry:
     """
     Central registry for all available evaluators.
 
-    The registry is responsible only for evaluator registration,
-    lookup, aliases, and discovery.
+    The registry is responsible only for:
+
+    - evaluator registration
+    - evaluator lookup
+    - aliases
+    - evaluator discovery
+    - evaluator metadata discovery
 
     Evaluator metadata and applicability rules remain defined by
     each evaluator through Evaluator.metadata.
@@ -23,6 +30,30 @@ class EvaluatorRegistry:
 
     def __init__(self) -> None:
         self._evaluators: dict[str, Evaluator] = {}
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """
+        Normalize evaluator names and aliases.
+
+        Example:
+            " Rouge " -> "rouge"
+            "LLM_JUDGE" -> "llm_judge"
+        """
+
+        if not isinstance(name, str):
+            raise ValueError("Evaluator name must be a string.")
+
+        normalized = name.strip().lower()
+
+        if not normalized:
+            raise ValueError("Evaluator name must not be empty.")
+
+        return normalized
 
     def register(
         self,
@@ -35,7 +66,8 @@ class EvaluatorRegistry:
             ValueError:
                 If the evaluator name is already registered.
         """
-        name = evaluator.name
+
+        name = self._normalize_name(evaluator.name)
 
         if name in self._evaluators:
             raise ValueError(f"Evaluator '{name}' is already registered.")
@@ -55,10 +87,17 @@ class EvaluatorRegistry:
         Example:
             rouge -> rouge_l
         """
+
+        alias = self._normalize_name(alias)
+
         if alias in self._evaluators:
             raise ValueError(f"Evaluator name or alias '{alias}' is already registered.")
 
         self._evaluators[alias] = evaluator
+
+    # ------------------------------------------------------------------
+    # Lookup
+    # ------------------------------------------------------------------
 
     def get(
         self,
@@ -67,10 +106,13 @@ class EvaluatorRegistry:
         """
         Get an evaluator by canonical name or alias.
         """
-        evaluator = self._evaluators.get(name)
+
+        normalized_name = self._normalize_name(name)
+
+        evaluator = self._evaluators.get(normalized_name)
 
         if evaluator is None:
-            raise ValueError(f"Unknown evaluator: {name}")
+            raise ValueError(f"Unknown evaluator: {normalized_name}")
 
         return evaluator
 
@@ -82,13 +124,31 @@ class EvaluatorRegistry:
         Get multiple evaluators by name.
 
         Unknown evaluator names are ignored for backward compatibility.
+
+        Names and aliases are normalized before lookup.
         """
-        return [self._evaluators[name] for name in names if name in self._evaluators]
+
+        evaluators: list[Evaluator] = []
+
+        for name in names:
+            normalized_name = self._normalize_name(name)
+
+            evaluator = self._evaluators.get(normalized_name)
+
+            if evaluator is not None:
+                evaluators.append(evaluator)
+
+        return evaluators
+
+    # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
 
     def list_names(self) -> list[str]:
         """
         Return all registered evaluator names and aliases.
         """
+
         return list(self._evaluators.keys())
 
     def list_evaluators(self) -> list[Evaluator]:
@@ -98,12 +158,14 @@ class EvaluatorRegistry:
         Aliases are excluded from discovery results.
 
         Example:
+
             rouge_l
             rouge
 
         Both point to the same ROUGELvaluator instance, so only
         the canonical evaluator is returned once.
         """
+
         evaluators: list[Evaluator] = []
         seen: set[int] = set()
 
@@ -127,6 +189,7 @@ class EvaluatorRegistry:
         The canonical evaluator name comes from Evaluator.name,
         while the remaining metadata comes from Evaluator.metadata.
         """
+
         metadata: list[dict[str, Any]] = []
 
         for evaluator in self.list_evaluators():
@@ -138,8 +201,8 @@ class EvaluatorRegistry:
                     "category": evaluator_metadata.category,
                     "description": evaluator_metadata.description,
                     "required_inputs": list(evaluator_metadata.required_inputs),
-                    "requires_reference": evaluator_metadata.requires_reference,
-                    "requires_context": evaluator_metadata.requires_context,
+                    "requires_reference": (evaluator_metadata.requires_reference),
+                    "requires_context": (evaluator_metadata.requires_context),
                     "requires_llm": evaluator_metadata.requires_llm,
                     "applicable_to": list(evaluator_metadata.applicable_to),
                     "tags": list(evaluator_metadata.tags),
@@ -149,13 +212,23 @@ class EvaluatorRegistry:
         return metadata
 
 
-def create_default_registry() -> EvaluatorRegistry:
+def create_default_registry(
+    *,
+    judge_model_gateway: ModelGateway | None = None,
+) -> EvaluatorRegistry:
     """
     Create the default evaluator registry.
 
     The registry is the single source of truth for evaluators
     available to the evaluation platform.
+
+    LLMJudgeEvaluator is always registered so that it is available
+    through evaluator discovery APIs.
+
+    The actual judge model gateway may be bound later per evaluation
+    run using LLMJudgeEvaluator.set_model_gateway().
     """
+
     registry = EvaluatorRegistry()
 
     # --------------------------------------------------------------
@@ -184,11 +257,21 @@ def create_default_registry() -> EvaluatorRegistry:
     )
 
     # --------------------------------------------------------------
-    # LLM / context-based evaluators
+    # Context-based evaluators
     # --------------------------------------------------------------
 
     registry.register(RelevanceEvaluator())
 
     registry.register(FaithfulnessEvaluator())
+
+    # --------------------------------------------------------------
+    # LLM AS A JUDGE
+    # --------------------------------------------------------------
+
+    registry.register(
+        LLMJudgeEvaluator(
+            model_gateway=judge_model_gateway,
+        )
+    )
 
     return registry

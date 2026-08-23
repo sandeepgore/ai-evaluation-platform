@@ -59,6 +59,7 @@ class FakeRegistry:
         self.evaluators = {
             "exact_match": FakeEvaluator("exact_match", 1.0),
             "f1": FakeEvaluator("f1", 0.5),
+            "llm_judge": FakeLLMJudgeEvaluator("llm_judge", 0.9),
         }
 
     def get(self, name):
@@ -68,6 +69,27 @@ class FakeRegistry:
             raise ValueError(f"Unknown evaluator: {name}")
 
         return evaluator
+
+    def register(self, evaluator):
+        self.evaluators[evaluator.name] = evaluator
+
+
+class FakeLLMJudgeEvaluator(FakeEvaluator):
+    @property
+    def metadata(self) -> EvaluatorMetadata:
+        return EvaluatorMetadata(
+            category="general",
+            description="Fake LLM judge evaluator.",
+            required_inputs=[
+                "expected_output",
+                "actual_output",
+            ],
+            requires_reference=True,
+            requires_context=False,
+            requires_llm=True,
+            applicable_to=["text"],
+            tags=[],
+        )
 
 
 def create_model():
@@ -662,6 +684,250 @@ async def test_engine_rejects_context_evaluator_without_context_before_model_exe
     assert "context" in str(exc_info.value.detail).lower()
 
     # The engine must reject the configuration before execution starts.
+    assert run.status == EvaluationRunStatus.PENDING
+
+    model_gateway.generate.assert_not_awaited()
+    model_gateway.generate_batch.assert_not_awaited()
+
+    engine_module.EvaluationResultService.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_engine_rejects_llm_evaluator_without_llm_before_model_execution():
+    """
+    An LLM-dependent evaluator must be rejected before model execution
+    when no evaluator LLM is available.
+    """
+
+    model = create_model()
+
+    case = SimpleNamespace(
+        id=uuid4(),
+        input="What is RAG?",
+        expected_output="RAG combines retrieval and generation.",
+        case_metadata=None,
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    run.configuration["evaluators"] = [
+        {
+            "name": "llm_judge",
+            "weight": 1.0,
+        }
+    ]
+
+    db = MagicMock()
+
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
+
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock()
+
+    scoring_service = MagicMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=create_default_registry(),
+        scoring_service=scoring_service,
+    )
+
+    from app.services.evaluation_engine import engine as engine_module
+
+    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+
+    engine_module.DatasetCaseService.list = AsyncMock(return_value=[case])
+
+    engine_module.EvaluationResultService.create = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await engine.execute(run.id)
+
+    assert exc_info.value.status_code == 400
+    assert "llm" in str(exc_info.value.detail).lower()
+
+    # Validation must happen before RUNNING.
+    assert run.status == EvaluationRunStatus.PENDING
+
+    # Model execution must never start.
+    model_gateway.generate.assert_not_awaited()
+    model_gateway.generate_batch.assert_not_awaited()
+
+    # No result should be persisted.
+    engine_module.EvaluationResultService.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_engine_accepts_llm_evaluator_when_llm_is_available():
+    """
+    An LLM-dependent evaluator should be accepted when the evaluator LLM
+    capability is available.
+    """
+
+    model = create_model()
+
+    case = SimpleNamespace(
+        id=uuid4(),
+        input="What is RAG?",
+        expected_output="RAG combines retrieval and generation.",
+        case_metadata=None,
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    run.configuration["evaluators"] = [
+        {
+            "name": "llm_judge",
+            "weight": 1.0,
+        }
+    ]
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    # --------------------------------------------------------------
+    # Model being evaluated
+    # --------------------------------------------------------------
+
+    model_gateway = MagicMock()
+
+    model_gateway.generate = AsyncMock(
+        return_value=create_response("RAG combines retrieval and generation.")
+    )
+
+    model_gateway.generate_batch = AsyncMock()
+
+    # --------------------------------------------------------------
+    # Dedicated evaluator / judge model
+    # --------------------------------------------------------------
+
+    judge_model_gateway = MagicMock()
+
+    judge_model_gateway.generate = AsyncMock(
+        return_value=create_response(
+            '{"score": 0.95, "feedback": "The response is correct and relevant."}'
+        )
+    )
+
+    judge_model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    from app.services.evaluation_engine import engine as engine_module
+
+    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+
+    engine_module.DatasetCaseService.list = AsyncMock(return_value=[case])
+
+    engine_module.EvaluationResultService.create = AsyncMock()
+
+    # Simulate a dedicated evaluator LLM being available.
+    engine._resolve_judge_model_gateway = AsyncMock(
+        return_value=(judge_model_gateway, {})
+    )
+
+    result = await engine.execute(run.id)
+
+    assert result.status == EvaluationRunStatus.COMPLETED
+    assert result.total_cases == 1
+    assert result.completed_cases == 1
+    assert result.failed_cases == 0
+
+    # Evaluated model called once.
+    model_gateway.generate.assert_awaited_once()
+
+    # Judge model called once.
+    judge_model_gateway.generate.assert_awaited_once()
+
+    engine_module.EvaluationResultService.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_engine_rejects_invalid_llm_available_configuration():
+    """
+    llm_available must be a boolean when explicitly configured.
+
+    The configuration value is validated, but actual evaluator LLM
+    availability is still determined by the resolved judge gateway.
+    """
+
+    model = create_model()
+
+    case = SimpleNamespace(
+        id=uuid4(),
+        input="What is RAG?",
+        expected_output="RAG combines retrieval and generation.",
+        case_metadata=None,
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    run.configuration["llm_available"] = "true"
+
+    db = MagicMock()
+
+    db.execute = AsyncMock(
+        return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: model,
+        )
+    )
+
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=create_default_registry(),
+        scoring_service=MagicMock(),
+    )
+
+    from app.services.evaluation_engine import engine as engine_module
+
+    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+
+    engine_module.DatasetCaseService.list = AsyncMock(return_value=[case])
+
+    engine_module.EvaluationResultService.create = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await engine.execute(run.id)
+
+    assert exc_info.value.status_code == 400
+    assert "llm_available" in str(exc_info.value.detail)
+
     assert run.status == EvaluationRunStatus.PENDING
 
     model_gateway.generate.assert_not_awaited()

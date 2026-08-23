@@ -59,6 +59,9 @@ class OllamaModelProvider(ModelGateway):
             "stream": False,
         }
 
+        if configuration.get("response_format") == "json":
+            payload["format"] = "json"
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 f"{base_url}/api/chat",
@@ -163,6 +166,9 @@ class OllamaModelProvider(ModelGateway):
                             ],
                             "stream": False,
                         }
+
+                        if configuration.get("response_format") == "json":
+                            payload["format"] = "json"
 
                         response = await client.post(
                             f"{base_url}/api/chat",
