@@ -156,6 +156,7 @@ def test_default_registry_contains_all_current_evaluators():
         "rouge",
         "relevance",
         "faithfulness",
+        "llm_judge",
     }
 
     assert set(registry.list_names()) == expected_names
@@ -198,6 +199,7 @@ def test_registry_list_evaluators_returns_canonical_evaluators():
         "rouge_l",
         "relevance",
         "faithfulness",
+        "llm_judge",
     ]
 
 
@@ -227,6 +229,7 @@ def test_registry_list_metadata_returns_all_metadata():
         "rouge_l",
         "relevance",
         "faithfulness",
+        "llm_judge",
     ]
 
 
