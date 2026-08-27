@@ -89,11 +89,15 @@ async def test_engine_handles_batch_inference_failure_and_continues():
 
     db = MagicMock()
 
-    db.execute = AsyncMock(
-        return_value=SimpleNamespace(
-            scalar_one_or_none=lambda: model,
-        )
-    )
+    result = MagicMock()
+
+    # Used by EvaluationEngine for model lookup.
+    result.scalar_one_or_none.return_value = model
+
+    # Used by EvaluationRunFeedbackService.
+    result.scalars.return_value.all.return_value = []
+
+    db.execute = AsyncMock(return_value=result)
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
@@ -322,11 +326,15 @@ async def test_engine_isolates_individual_batch_item_failure():
 
     db = MagicMock()
 
-    db.execute = AsyncMock(
-        return_value=SimpleNamespace(
-            scalar_one_or_none=lambda: model,
-        )
-    )
+    result = MagicMock()
+
+    # Used by EvaluationEngine for model lookup.
+    result.scalar_one_or_none.return_value = model
+
+    # Used by EvaluationRunFeedbackService.
+    result.scalars.return_value.all.return_value = []
+
+    db.execute = AsyncMock(return_value=result)
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()

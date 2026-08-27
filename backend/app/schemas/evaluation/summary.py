@@ -10,6 +10,14 @@ class EvaluationRunModelResponse(BaseModel):
     model_identifier: str
 
 
+class EvaluationRunFeedbackResponse(BaseModel):
+    overall: str
+    strengths: list[str]
+    weaknesses: list[str]
+    recommendations: list[str]
+    evaluator_feedback: list[str]
+
+
 class EvaluationRunCostResponse(BaseModel):
     input_cost: float = Field(ge=0)
     output_cost: float = Field(ge=0)
@@ -43,6 +51,8 @@ class EvaluationRunSummaryResponse(BaseModel):
 
     overall_score: float = Field(ge=0.0, le=1.0)
     metrics: dict[str, float]
+
+    feedback: EvaluationRunFeedbackResponse
 
     total_results: int = Field(ge=0)
     completed_cases: int = Field(ge=0)

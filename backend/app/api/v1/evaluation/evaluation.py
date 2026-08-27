@@ -2,8 +2,10 @@ from uuid import UUID
 
 from app.schemas.evaluation.summary import EvaluationRunSummaryResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.redis import get_redis
 from app.db.session import get_db
 from app.schemas.evaluation import (
     EvaluationRunCreate,
@@ -12,6 +14,12 @@ from app.schemas.evaluation import (
 )
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation_engine.engine import EvaluationEngine
+from app.services.evaluation_engine.feedback import (
+    EvaluationRunFeedbackService,
+)
+from app.services.evaluation_engine.scoring_config import (
+    ScoringConfigurationService,
+)
 from app.services.evaluation_engine.summary import EvaluationRunSummaryService
 from app.services.evaluators import create_default_registry
 from app.services.evaluators.applicability import (
@@ -140,6 +148,7 @@ async def get_evaluation_run_summary(
 async def execute_evaluation_run(
     run_id: UUID,
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
     evaluator_registry = create_default_registry()
 
@@ -149,12 +158,20 @@ async def execute_evaluation_run(
 
     scoring_service = ScoringService()
 
+    scoring_configuration_service = ScoringConfigurationService(
+        redis=redis,
+    )
+
+    feedback_service = EvaluationRunFeedbackService()
+
     engine = EvaluationEngine(
         db=db,
         model_gateway=None,
         evaluator_registry=evaluator_registry,
         applicability_service=applicability_service,
         scoring_service=scoring_service,
+        scoring_configuration_service=scoring_configuration_service,
+        feedback_service=feedback_service,
     )
 
     return await engine.execute(run_id)

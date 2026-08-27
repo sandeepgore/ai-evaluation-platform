@@ -163,10 +163,19 @@ def create_response(output: str):
 def create_engine_mocks(model):
     db = MagicMock()
 
+    # The engine uses scalar_one_or_none() when resolving the model.
+    # The feedback service uses scalars() when reading evaluation results.
+    # Therefore the mocked SQLAlchemy result needs to support both APIs.
+    result = MagicMock()
+
+    result.scalar_one_or_none.return_value = model
+
+    # Feedback service expects:
+    # result.scalars().all()
+    result.scalars.return_value.all.return_value = []
+
     db.execute = AsyncMock(
-        return_value=SimpleNamespace(
-            scalar_one_or_none=lambda: model,
-        )
+        return_value=result,
     )
 
     db.commit = AsyncMock()
@@ -845,9 +854,7 @@ async def test_engine_accepts_llm_evaluator_when_llm_is_available():
     engine_module.EvaluationResultService.create = AsyncMock()
 
     # Simulate a dedicated evaluator LLM being available.
-    engine._resolve_judge_model_gateway = AsyncMock(
-        return_value=(judge_model_gateway, {})
-    )
+    engine._resolve_judge_model_gateway = AsyncMock(return_value=(judge_model_gateway, {}))
 
     result = await engine.execute(run.id)
 
