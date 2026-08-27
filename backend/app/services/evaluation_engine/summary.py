@@ -13,6 +13,12 @@ from app.services.evaluation_engine.cost import EvaluationCostService
 class EvaluationRunSummaryService:
     """
     Aggregates evaluation results into a run-level summary.
+
+    Summary feedback is deterministic and derived from:
+    - aggregated evaluator scores
+    - stored case-level evaluator feedback
+
+    No additional LLM call is performed.
     """
 
     @staticmethod
@@ -36,6 +42,13 @@ class EvaluationRunSummaryService:
                 "total_results": 0,
                 "completed_cases": 0,
                 "failed_cases": 0,
+                "feedback": {
+                    "overall": "No evaluation results are available.",
+                    "strengths": [],
+                    "weaknesses": [],
+                    "recommendations": ["Execute the evaluation run before requesting a summary."],
+                    "evaluator_feedback": [],
+                },
                 "model": None,
                 "performance": {
                     "duration_ms": None,
@@ -147,6 +160,15 @@ class EvaluationRunSummaryService:
         overall_score = overall_total / overall_count if overall_count > 0 else 0.0
 
         # --------------------------------------------------------------
+        # Summary feedback
+        # --------------------------------------------------------------
+
+        feedback = EvaluationRunSummaryService._build_feedback(
+            metrics=metrics,
+            completed_results=completed_results,
+        )
+
+        # --------------------------------------------------------------
         # Run-level performance metrics
         # --------------------------------------------------------------
 
@@ -232,5 +254,205 @@ class EvaluationRunSummaryService:
             "total_results": len(results),
             "completed_cases": len(completed_results),
             "failed_cases": len(failed_results),
+            "feedback": feedback,
             "performance": performance,
+        }
+
+    # ------------------------------------------------------------------
+    # Feedback
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_feedback(
+        metrics: dict[str, float],
+        completed_results: list[EvaluationResult],
+    ) -> dict[str, Any]:
+        strengths: list[str] = []
+        weaknesses: list[str] = []
+        recommendations: list[str] = []
+
+        evaluator_feedback: list[str] = []
+
+        # --------------------------------------------------------------
+        # Collect stored case-level feedback
+        # --------------------------------------------------------------
+
+        for result in completed_results:
+            if not result.feedback:
+                continue
+
+            feedback_text = result.feedback.strip()
+
+            if not feedback_text:
+                continue
+
+            evaluator_feedback.append(feedback_text)
+
+        # Avoid returning an unnecessarily large summary.
+        evaluator_feedback = evaluator_feedback[:10]
+
+        # --------------------------------------------------------------
+        # Relevance
+        # --------------------------------------------------------------
+
+        relevance = metrics.get("relevance")
+
+        if relevance is not None:
+            if relevance >= 0.8:
+                strengths.append("High relevance to the evaluation context.")
+            elif relevance < 0.5:
+                weaknesses.append(
+                    "Low relevance indicates that responses may not stay "
+                    "focused on the provided context or question."
+                )
+                recommendations.append(
+                    "Improve response relevance by focusing more directly "
+                    "on the question and supporting context."
+                )
+            else:
+                weaknesses.append("Relevance is acceptable but has room for improvement.")
+                recommendations.append(
+                    "Keep responses more directly aligned with the question and supporting context."
+                )
+
+        # --------------------------------------------------------------
+        # Faithfulness
+        # --------------------------------------------------------------
+
+        faithfulness = metrics.get("faithfulness")
+
+        if faithfulness is not None:
+            if faithfulness >= 0.8:
+                strengths.append(
+                    "Strong faithfulness indicates good grounding in the provided context."
+                )
+            elif faithfulness < 0.7:
+                weaknesses.append(
+                    "Faithfulness can be improved because some response "
+                    "content is not sufficiently supported by the context."
+                )
+                recommendations.append(
+                    "Improve grounding by limiting unsupported claims "
+                    "and relying more closely on the provided context."
+                )
+            else:
+                weaknesses.append("Faithfulness is acceptable but could be improved.")
+
+        # --------------------------------------------------------------
+        # F1
+        # --------------------------------------------------------------
+
+        f1 = metrics.get("f1")
+
+        if f1 is not None:
+            if f1 >= 0.8:
+                strengths.append(
+                    "High F1 indicates strong token-level similarity to reference answers."
+                )
+            elif f1 < 0.4:
+                weaknesses.append(
+                    "Low F1 indicates substantial mismatch with the reference answers."
+                )
+                recommendations.append(
+                    "Improve alignment with expected answers while preserving relevant information."
+                )
+            else:
+                weaknesses.append("F1 shows moderate alignment with reference answers.")
+
+        # --------------------------------------------------------------
+        # Exact match
+        # --------------------------------------------------------------
+
+        exact_match = metrics.get("exact_match")
+
+        if exact_match is not None:
+            if exact_match >= 0.8:
+                strengths.append(
+                    "High exact-match performance indicates strong agreement with expected answers."
+                )
+            elif exact_match < 0.5:
+                weaknesses.append(
+                    "Low exact-match performance indicates responses "
+                    "frequently differ from expected answers."
+                )
+
+        # --------------------------------------------------------------
+        # Contains
+        # --------------------------------------------------------------
+
+        contains = metrics.get("contains")
+
+        if contains is not None:
+            if contains >= 0.8:
+                strengths.append("Responses generally contain the expected answer content.")
+            elif contains < 0.5:
+                weaknesses.append("Responses frequently omit expected answer content.")
+                recommendations.append(
+                    "Ensure responses contain the key information "
+                    "expected by the evaluation dataset."
+                )
+
+        # --------------------------------------------------------------
+        # LLM Judge
+        # --------------------------------------------------------------
+
+        llm_judge = metrics.get("llm_judge")
+
+        if llm_judge is not None:
+            if llm_judge >= 0.8:
+                strengths.append("LLM judge evaluation indicates strong overall response quality.")
+            elif llm_judge < 0.5:
+                weaknesses.append("LLM judge evaluation indicates significant quality issues.")
+                recommendations.append(
+                    "Review judge feedback and improve correctness, "
+                    "relevance, completeness, and clarity."
+                )
+            else:
+                weaknesses.append(
+                    "LLM judge evaluation indicates acceptable but improvable response quality."
+                )
+                recommendations.append(
+                    "Review judge feedback and improve completeness, "
+                    "clarity, relevance, and grounding."
+                )
+
+        # --------------------------------------------------------------
+        # Overall assessment
+        # --------------------------------------------------------------
+
+        if metrics:
+            overall_score = sum(metrics.values()) / len(metrics)
+        else:
+            overall_score = 0.0
+
+        if overall_score >= 0.8:
+            overall = "Strong overall evaluation performance."
+        elif overall_score >= 0.6:
+            overall = "Moderate overall evaluation performance with some areas for improvement."
+        elif overall_score >= 0.4:
+            overall = (
+                "Below-average evaluation performance with several areas requiring improvement."
+            )
+        else:
+            overall = "Poor overall evaluation performance requiring significant improvement."
+
+        # --------------------------------------------------------------
+        # Empty-state handling
+        # --------------------------------------------------------------
+
+        if not strengths:
+            strengths.append("No major metric strengths were identified.")
+
+        if not weaknesses:
+            weaknesses.append("No major metric weaknesses were identified.")
+
+        if not recommendations:
+            recommendations.append("Continue monitoring evaluation metrics across future runs.")
+
+        return {
+            "overall": overall,
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "recommendations": recommendations,
+            "evaluator_feedback": evaluator_feedback,
         }

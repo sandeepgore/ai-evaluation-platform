@@ -45,6 +45,7 @@ def create_result(
     total_tokens=3_000,
     latency_ms=1_000,
     score=0.8,
+    feedback=None,
 ):
     return SimpleNamespace(
         status=status,
@@ -57,6 +58,7 @@ def create_result(
                 "score": score,
             }
         },
+        feedback=feedback,
         is_active=True,
     )
 

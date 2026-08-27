@@ -214,6 +214,15 @@ def test_get_evaluation_run_summary():
             "exact_match": 0.5,
             "f1": 1.0,
         },
+        "feedback": {
+            "overall": "Moderate overall evaluation performance with some areas for improvement.",
+            "strengths": ["High F1 indicates strong token-level similarity to reference answers."],
+            "weaknesses": [
+                "Low exact-match performance indicates responses frequently differ from expected answers."
+            ],
+            "recommendations": ["Continue monitoring evaluation metrics across future runs."],
+            "evaluator_feedback": ["f1: strong token overlap with reference answer"],
+        },
         "total_results": 2,
         "completed_cases": 2,
         "failed_cases": 0,
@@ -222,6 +231,9 @@ def test_get_evaluation_run_summary():
             "total_model_latency_ms": 6000,
             "avg_model_latency_ms": 3000.0,
             "min_model_latency_ms": 2000,
+            "p50_model_latency_ms": 3000.0,
+            "p95_model_latency_ms": 3900.0,
+            "p99_model_latency_ms": 3980.0,
             "max_model_latency_ms": 4000,
             "input_tokens": 250,
             "output_tokens": 450,
@@ -250,9 +262,44 @@ def test_get_evaluation_run_summary():
     assert data["metrics"]["exact_match"] == 0.5
     assert data["metrics"]["f1"] == 1.0
 
+    # --------------------------------------------------------------
+    # Feedback
+    # --------------------------------------------------------------
+
+    feedback = data["feedback"]
+
+    assert (
+        feedback["overall"]
+        == "Moderate overall evaluation performance with some areas for improvement."
+    )
+
+    assert (
+        "High F1 indicates strong token-level similarity to reference answers."
+        in feedback["strengths"]
+    )
+
+    assert (
+        "Low exact-match performance indicates responses frequently differ from expected answers."
+        in feedback["weaknesses"]
+    )
+
+    assert (
+        "Continue monitoring evaluation metrics across future runs." in feedback["recommendations"]
+    )
+
+    assert "f1: strong token overlap with reference answer" in feedback["evaluator_feedback"]
+
+    # --------------------------------------------------------------
+    # Result counts
+    # --------------------------------------------------------------
+
     assert data["total_results"] == 2
     assert data["completed_cases"] == 2
     assert data["failed_cases"] == 0
+
+    # --------------------------------------------------------------
+    # Performance
+    # --------------------------------------------------------------
 
     performance = data["performance"]
 
@@ -260,6 +307,9 @@ def test_get_evaluation_run_summary():
     assert performance["total_model_latency_ms"] == 6000
     assert performance["avg_model_latency_ms"] == 3000.0
     assert performance["min_model_latency_ms"] == 2000
+    assert performance["p50_model_latency_ms"] == 3000.0
+    assert performance["p95_model_latency_ms"] == 3900.0
+    assert performance["p99_model_latency_ms"] == 3980.0
     assert performance["max_model_latency_ms"] == 4000
 
     assert performance["input_tokens"] == 250
@@ -268,7 +318,11 @@ def test_get_evaluation_run_summary():
 
     assert performance["throughput_cases_per_second"] == 0.2
 
-    assert data["performance"]["cost"]["input_cost"] == 0.001
-    assert data["performance"]["cost"]["output_cost"] == 0.002
-    assert data["performance"]["cost"]["total_cost"] == 0.003
-    assert data["performance"]["cost"]["currency"] == "USD"
+    # --------------------------------------------------------------
+    # Cost
+    # --------------------------------------------------------------
+
+    assert performance["cost"]["input_cost"] == 0.001
+    assert performance["cost"]["output_cost"] == 0.002
+    assert performance["cost"]["total_cost"] == 0.003
+    assert performance["cost"]["currency"] == "USD"
