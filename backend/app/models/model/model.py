@@ -2,7 +2,7 @@ import uuid
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, JSON, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -78,6 +78,24 @@ class Model(TimestampMixin, Base):
     configuration: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
+    )
+
+    input_price_per_million: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    output_price_per_million: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    pricing_currency: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="USD",
     )
 
     is_active: Mapped[bool] = mapped_column(

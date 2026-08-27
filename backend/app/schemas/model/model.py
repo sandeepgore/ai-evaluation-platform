@@ -14,6 +14,22 @@ class ModelCreate(BaseModel):
     model_type: ModelType = ModelType.CHAT
     configuration: dict[str, Any] | None = None
 
+    input_price_per_million: float = Field(
+        default=0.0,
+        ge=0,
+    )
+
+    output_price_per_million: float = Field(
+        default=0.0,
+        ge=0,
+    )
+
+    pricing_currency: str = Field(
+        default="USD",
+        min_length=3,
+        max_length=10,
+    )
+
 
 class ModelUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
@@ -27,6 +43,22 @@ class ModelUpdate(BaseModel):
     configuration: dict[str, Any] | None = None
     is_active: bool | None = None
 
+    input_price_per_million: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    output_price_per_million: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    pricing_currency: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=10,
+    )
+
 
 class ModelResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -38,4 +70,9 @@ class ModelResponse(BaseModel):
     model_identifier: str
     model_type: ModelType
     configuration: dict[str, Any] | None
+
+    input_price_per_million: float
+    output_price_per_million: float
+    pricing_currency: str
+
     is_active: bool

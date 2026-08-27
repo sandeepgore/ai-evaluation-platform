@@ -3,9 +3,11 @@ from app.schemas.evaluation.evaluation import (
     EvaluationRunUpdate,
     EvaluationRunResponse,
 )
+from app.schemas.evaluation.summary import EvaluationRunSummaryResponse
 
 __all__ = [
     "EvaluationRunCreate",
     "EvaluationRunUpdate",
     "EvaluationRunResponse",
+    "EvaluationRunSummaryResponse",
 ]

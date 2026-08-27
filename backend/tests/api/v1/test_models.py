@@ -24,6 +24,9 @@ def create_fake_model():
             "max_tokens": 1000,
         },
         is_active=True,
+        input_price_per_million=5.0,
+        output_price_per_million=15.0,
+        pricing_currency="USD",
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
@@ -60,6 +63,9 @@ def test_create_model():
     assert data["model_type"] == model.model_type.value
     assert data["configuration"] == model.configuration
     assert data["is_active"] is True
+    assert data["input_price_per_million"] == model.input_price_per_million
+    assert data["output_price_per_million"] == model.output_price_per_million
+    assert data["pricing_currency"] == model.pricing_currency
 
 
 def test_create_model_uses_default_model_type():
