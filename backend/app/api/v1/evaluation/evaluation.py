@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from app.schemas.evaluation.summary import EvaluationRunSummaryResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -118,7 +119,7 @@ async def delete_evaluation_run(
 
 @router.get(
     "/{run_id}/summary",
-    response_model=dict,
+    response_model=EvaluationRunSummaryResponse,
 )
 async def get_evaluation_run_summary(
     run_id: UUID,
