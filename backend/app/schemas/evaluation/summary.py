@@ -11,11 +11,55 @@ class EvaluationRunModelResponse(BaseModel):
 
 
 class EvaluationRunFeedbackResponse(BaseModel):
+    """
+    Feedback structure used by the rolling reducer.
+
+    Intermediate reducer states are allowed to contain
+    fewer than three items in each section.
+    """
+
     overall: str
+
     strengths: list[str]
     weaknesses: list[str]
+    patterns: list[str]
     recommendations: list[str]
-    evaluator_feedback: list[str]
+    evaluator_feedback: list[str] = Field(
+        default_factory=list,
+    )
+
+
+class EvaluationRunFinalFeedbackResponse(BaseModel):
+    """
+    Final qualitative feedback persisted with the evaluation summary.
+
+    The final summary must contain at least three evidence-grounded
+    items in each qualitative section.
+    """
+
+    overall: str = Field(
+        min_length=1,
+    )
+
+    strengths: list[str] = Field(
+        min_length=3,
+    )
+
+    weaknesses: list[str] = Field(
+        min_length=3,
+    )
+
+    patterns: list[str] = Field(
+        min_length=3,
+    )
+
+    recommendations: list[str] = Field(
+        min_length=3,
+    )
+
+    evaluator_feedback: list[str] = Field(
+        default_factory=list,
+    )
 
 
 class EvaluationRunCostResponse(BaseModel):
@@ -49,10 +93,14 @@ class EvaluationRunPerformanceResponse(BaseModel):
 class EvaluationRunSummaryResponse(BaseModel):
     model: EvaluationRunModelResponse | None = None
 
-    overall_score: float = Field(ge=0.0, le=1.0)
+    overall_score: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+
     metrics: dict[str, float]
 
-    feedback: EvaluationRunFeedbackResponse
+    feedback: EvaluationRunFinalFeedbackResponse
 
     total_results: int = Field(ge=0)
     completed_cases: int = Field(ge=0)

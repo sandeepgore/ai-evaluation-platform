@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,11 +16,20 @@ from app.services.evaluation import EvaluationRunService
 from app.services.evaluation.dataset_capability import (
     DatasetCapabilityAnalyzer,
 )
-from app.services.evaluation_engine.feedback import (
-    EvaluationRunFeedbackService,
+from app.services.evaluation_engine.feedback_aggregation import (
+    EvaluationFeedbackAggregationService,
+)
+from app.services.evaluation_engine.feedback_reducer import (
+    EvaluationFeedbackReducer,
 )
 from app.services.evaluation_engine.scoring_config import (
     ScoringConfigurationService,
+)
+from app.services.evaluation_engine.summary import (
+    EvaluationRunSummaryService,
+)
+from app.services.evaluation_engine.summary_persistence import (
+    EvaluationSummaryPersistenceService,
 )
 from app.services.evaluation_results import EvaluationResultService
 from app.services.evaluators import Evaluator, EvaluatorRegistry
@@ -62,7 +72,10 @@ class EvaluationEngine:
     - Resolve evaluator applicability.
     - Resolve dedicated LLM judge configuration.
     - Resolve scoring configuration.
+    - Feed case-level evaluator feedback into the rolling reducer.
     - Generate deterministic run-level feedback.
+    - Generate optional final LLM qualitative feedback.
+    - Persist run summaries and cache them in Redis.
     - Maintain run lifecycle state and timing.
     """
 
@@ -74,14 +87,16 @@ class EvaluationEngine:
         scoring_service: ScoringService,
         applicability_service: EvaluatorApplicabilityService | None = None,
         scoring_configuration_service: ScoringConfigurationService | None = None,
-        feedback_service: EvaluationRunFeedbackService | None = None,
+        redis: Redis | None = None,
+        feedback_aggregation_service: (EvaluationFeedbackAggregationService | None) = None,
     ) -> None:
         self.db = db
         self.model_gateway = model_gateway
         self.evaluator_registry = evaluator_registry
+        self.redis = redis
 
         self.applicability_service = applicability_service or EvaluatorApplicabilityService(
-            evaluator_registry
+            evaluator_registry,
         )
 
         self.scoring_service = scoring_service
@@ -90,7 +105,7 @@ class EvaluationEngine:
             scoring_configuration_service or ScoringConfigurationService()
         )
 
-        self.feedback_service = feedback_service or EvaluationRunFeedbackService()
+        self.feedback_aggregation_service = feedback_aggregation_service
 
     # ------------------------------------------------------------------
     # Configuration
@@ -106,7 +121,7 @@ class EvaluationEngine:
         llm_available is a configuration capability declaration and,
         when explicitly supplied, must be a boolean.
 
-        The actual evaluator LLM availability is determined by resolving
+        Actual evaluator LLM availability is determined by resolving
         the dedicated judge model gateway.
         """
 
@@ -146,9 +161,12 @@ class EvaluationEngine:
 
         evaluation_type = run.evaluation_type.value
 
-        dataset_capabilities = DatasetCapabilityAnalyzer.analyze(cases)
+        dataset_capabilities = DatasetCapabilityAnalyzer.analyze(
+            cases,
+        )
 
         has_reference = dataset_capabilities.all_cases_have_reference
+
         has_context = dataset_capabilities.all_cases_have_context
 
         available_inputs: set[str] = {
@@ -156,10 +174,14 @@ class EvaluationEngine:
         }
 
         if has_reference:
-            available_inputs.add("expected_output")
+            available_inputs.add(
+                "expected_output",
+            )
 
         if has_context:
-            available_inputs.add("context")
+            available_inputs.add(
+                "context",
+            )
 
         if not isinstance(
             llm_available,
@@ -219,18 +241,20 @@ class EvaluationEngine:
         Evaluator metadata and applicability rules are delegated to
         EvaluatorApplicabilityService.
 
-        The returned evaluator list preserves the configured order
-        and evaluator weights.
+        The returned evaluator list preserves configured order and
+        evaluator weights.
         """
 
         evaluation_type = run.evaluation_type.value
 
         evaluator_config: list[str | dict[str, Any]] = self._get_default_evaluator_names(
-            evaluation_type
+            evaluation_type,
         )
 
         if run.configuration:
-            configured_evaluators = run.configuration.get("evaluators")
+            configured_evaluators = run.configuration.get(
+                "evaluators",
+            )
 
             if configured_evaluators:
                 evaluator_config = configured_evaluators
@@ -258,8 +282,14 @@ class EvaluationEngine:
                 weight = 1.0
 
             elif isinstance(item, dict):
-                evaluator_name = item.get("name")
-                weight = item.get("weight", 1.0)
+                evaluator_name = item.get(
+                    "name",
+                )
+
+                weight = item.get(
+                    "weight",
+                    1.0,
+                )
 
                 if not isinstance(
                     evaluator_name,
@@ -325,10 +355,12 @@ class EvaluationEngine:
                 detail=str(exc),
             ) from exc
 
-        if len(validated_evaluators) != len(parsed_configurations):
+        if len(validated_evaluators) != len(
+            parsed_configurations,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Evaluator validation returned an unexpected result.",
+                detail=("Evaluator validation returned an unexpected result."),
             )
 
         evaluators: list[tuple[Evaluator, float]] = []
@@ -368,7 +400,9 @@ class EvaluationEngine:
         execution_mode = "sequential"
 
         if run.configuration:
-            configured_mode = run.configuration.get("execution_mode")
+            configured_mode = run.configuration.get(
+                "execution_mode",
+            )
 
             if configured_mode is not None:
                 if not isinstance(
@@ -406,7 +440,9 @@ class EvaluationEngine:
         batch_size = 10
 
         if run.configuration:
-            configured_batch_size = run.configuration.get("batch_size")
+            configured_batch_size = run.configuration.get(
+                "batch_size",
+            )
 
             if configured_batch_size is not None:
                 if not isinstance(
@@ -424,7 +460,7 @@ class EvaluationEngine:
                 if configured_batch_size <= 0:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="'batch_size' must be greater than zero.",
+                        detail=("'batch_size' must be greater than zero."),
                     )
 
                 batch_size = configured_batch_size
@@ -438,7 +474,14 @@ class EvaluationEngine:
     async def _resolve_judge_model_gateway(
         self,
         run: EvaluationRun,
-    ) -> tuple[ModelGateway, dict[str, Any]] | None:
+    ) -> (
+        tuple[
+            ModelGateway,
+            dict[str, Any],
+            Model,
+        ]
+        | None
+    ):
         """
         Resolve the dedicated LLM judge model gateway.
 
@@ -446,21 +489,20 @@ class EvaluationEngine:
 
             configuration["judge_model_id"]
 
-        Returns:
-            ModelGateway and model configuration when a judge model
-            is configured.
+        Returns the gateway, configuration, and Model when configured.
 
-            None when no judge model is configured.
+        Returns None when no judge model is configured.
 
-        Raises:
-            HTTPException when the configured judge model is invalid,
-            missing, inactive, or unsupported.
+        Raises HTTPException when the configured judge model is invalid,
+        missing, inactive, or unsupported.
         """
 
         if not run.configuration:
             return None
 
-        judge_model_id = run.configuration.get("judge_model_id")
+        judge_model_id = run.configuration.get(
+            "judge_model_id",
+        )
 
         if judge_model_id is None:
             return None
@@ -475,7 +517,9 @@ class EvaluationEngine:
             )
 
         try:
-            judge_model_uuid = UUID(judge_model_id)
+            judge_model_uuid = UUID(
+                judge_model_id,
+            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -499,14 +543,17 @@ class EvaluationEngine:
 
         try:
             return (
-                ModelGatewayFactory.create(judge_model),
+                ModelGatewayFactory.create(
+                    judge_model,
+                ),
                 judge_model.configuration or {},
+                judge_model,
             )
 
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Judge model configuration is invalid: {exc}",
+                detail=(f"Judge model configuration is invalid: {exc}"),
             ) from exc
 
     def _build_configuration(
@@ -525,10 +572,14 @@ class EvaluationEngine:
         configuration: dict[str, Any] = {}
 
         if model.configuration:
-            configuration.update(model.configuration)
+            configuration.update(
+                model.configuration,
+            )
 
         if run.configuration:
-            configuration.update(run.configuration)
+            configuration.update(
+                run.configuration,
+            )
 
         configuration.setdefault(
             "model",
@@ -547,7 +598,9 @@ class EvaluationEngine:
         Return the current timezone-aware UTC datetime.
         """
 
-        return datetime.now(timezone.utc)
+        return datetime.now(
+            timezone.utc,
+        )
 
     @staticmethod
     def _calculate_duration_ms(
@@ -583,7 +636,11 @@ class EvaluationEngine:
         and reused for every case.
         """
 
-        scores: dict[str, dict[str, Any]] = {}
+        scores: dict[
+            str,
+            dict[str, Any],
+        ] = {}
+
         feedback_messages: list[str] = []
 
         for evaluator, _weight in evaluator_configs:
@@ -598,7 +655,9 @@ class EvaluationEngine:
             )
 
             if case_metadata:
-                evaluation_context.update(case_metadata)
+                evaluation_context.update(
+                    case_metadata,
+                )
 
             evaluation_score = await evaluator.evaluate(
                 expected_output=case.expected_output,
@@ -614,12 +673,8 @@ class EvaluationEngine:
             if evaluation_score.feedback:
                 feedback_messages.append(f"{evaluation_score.metric}: {evaluation_score.feedback}")
 
-        # Use the run-level scoring configuration resolved by
-        # ScoringConfigurationService.
         case_scoring_configuration = scoring_configuration.copy()
 
-        # Evaluator weights come from the evaluator configuration
-        # resolved for this run.
         case_scoring_configuration["weights"] = {
             evaluator.name: weight for evaluator, weight in evaluator_configs
         }
@@ -636,7 +691,7 @@ class EvaluationEngine:
 
         feedback = "\n".join(feedback_messages) if feedback_messages else None
 
-        await EvaluationResultService.create(
+        evaluation_result = await EvaluationResultService.create(
             self.db,
             evaluation_run_id=run.id,
             dataset_case_id=case.id,
@@ -653,6 +708,16 @@ class EvaluationEngine:
             error_message=None,
         )
 
+        if self.feedback_aggregation_service is not None and evaluation_result.feedback:
+            try:
+                await self.feedback_aggregation_service.accept(
+                    run.id,
+                    evaluation_result.id,
+                    evaluation_result.feedback,
+                )
+            except Exception:
+                pass
+
         run.completed_cases += 1
 
     async def _save_failed_case(
@@ -663,7 +728,8 @@ class EvaluationEngine:
         exc: Exception,
     ) -> None:
         """
-        Persist a failed evaluation case with a useful diagnostic message.
+        Persist a failed evaluation case with a useful diagnostic
+        message.
         """
 
         error_message = f"{type(exc).__name__}: {str(exc) or repr(exc)}"
@@ -757,21 +823,11 @@ class EvaluationEngine:
         """
         Execute cases in batches.
 
-        The model gateway may return either:
+        Per-item errors are isolated to their corresponding case.
 
-        - BatchModelResponse objects containing:
-            index, response, error
+        Gateway-level exceptions fail every case in that batch.
 
-        - raw ModelResponse objects for backward compatibility.
-
-        Gateway-level exceptions fail the entire batch.
-
-        Per-item errors only fail the corresponding case.
-
-        Successful responses are evaluated and persisted normally.
-
-        Execution continues with subsequent batches even when a batch
-        or individual item fails.
+        Execution continues with subsequent batches after failures.
         """
 
         configuration = self._build_configuration(
@@ -825,7 +881,9 @@ class EvaluationEngine:
 
                 continue
 
-            if len(batch_results) != len(batch_cases):
+            if len(batch_results) != len(
+                batch_cases,
+            ):
                 batch_exc = RuntimeError(
                     "Model gateway returned an unexpected number of responses."
                 )
@@ -921,15 +979,23 @@ class EvaluationEngine:
             execute cases
                 |
                 v
-            generate run feedback
+            finalize rolling feedback
+                |
+                v
+            calculate persisted scores
+                |
+                v
+            final LLM qualitative synthesis
+                |
+                v
+            persist final summary
+                |
+                v
+            cache final summary
                 |
                 v
             COMPLETED / FAILED
         """
-
-        # --------------------------------------------------------------
-        # 1. Load evaluation run
-        # --------------------------------------------------------------
 
         run = await EvaluationRunService.get_by_id(
             self.db,
@@ -941,10 +1007,6 @@ class EvaluationEngine:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Evaluation run not found.",
             )
-
-        # --------------------------------------------------------------
-        # 2. Validate run state
-        # --------------------------------------------------------------
 
         if run.status == EvaluationRunStatus.RUNNING:
             raise HTTPException(
@@ -964,29 +1026,17 @@ class EvaluationEngine:
                 detail="Evaluation run has been cancelled.",
             )
 
-        # --------------------------------------------------------------
-        # 3. Validate run configuration
-        #
-        # Configuration validation must happen before:
-        #
-        #   - model lookup
-        #   - model gateway resolution
-        #   - judge gateway resolution
-        #   - dataset execution
-        #   - RUNNING state
-        #
-        # This guarantees invalid configuration is rejected before
-        # inference begins.
-        # --------------------------------------------------------------
+        self._validate_llm_available_configuration(
+            run,
+        )
 
-        self._validate_llm_available_configuration(run)
+        execution_mode = self._get_execution_mode(
+            run,
+        )
 
-        execution_mode = self._get_execution_mode(run)
-        batch_size = self._get_batch_size(run)
-
-        # --------------------------------------------------------------
-        # 4. Validate associated model
-        # --------------------------------------------------------------
+        batch_size = self._get_batch_size(
+            run,
+        )
 
         model_result = await self.db.execute(
             select(Model).where(
@@ -1003,49 +1053,39 @@ class EvaluationEngine:
                 detail="Model not found or inactive.",
             )
 
-        # --------------------------------------------------------------
-        # 5. Resolve model gateway
-        # --------------------------------------------------------------
-
         model_gateway = self.model_gateway
 
         if model_gateway is None:
             try:
-                model_gateway = ModelGatewayFactory.create(model)
-
+                model_gateway = ModelGatewayFactory.create(
+                    model,
+                )
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=str(exc),
                 ) from exc
 
-        # --------------------------------------------------------------
-        # 6. Resolve dedicated judge model gateway
-        # --------------------------------------------------------------
-
-        judge_model_resolution = await self._resolve_judge_model_gateway(run)
+        judge_model_resolution = await self._resolve_judge_model_gateway(
+            run,
+        )
 
         judge_model_gateway = None
         judge_model_configuration: dict[str, Any] = {}
+        resolved_judge_model: Model | None = None
 
         if judge_model_resolution is not None:
             (
                 judge_model_gateway,
                 judge_model_configuration,
+                resolved_judge_model,
             ) = judge_model_resolution
-
-        # --------------------------------------------------------------
-        # 7. Bind dedicated judge model gateway
-        #
-        # llm_judge remains discoverable through the evaluator registry.
-        #
-        # The actual judge gateway is bound only when the evaluation
-        # run resolves a valid dedicated judge model.
-        # --------------------------------------------------------------
 
         if judge_model_gateway is not None:
             try:
-                existing_judge = self.evaluator_registry.get("llm_judge")
+                existing_judge = self.evaluator_registry.get(
+                    "llm_judge",
+                )
 
                 if isinstance(
                     existing_judge,
@@ -1055,15 +1095,11 @@ class EvaluationEngine:
                         judge_model_gateway,
                         judge_model_configuration,
                     )
-
                 else:
-                    # Allows lightweight/custom registries used by tests
-                    # or integrations to provide their own llm_judge
-                    # implementation.
                     self.evaluator_registry.register(
                         LLMJudgeEvaluator(
                             model_gateway=judge_model_gateway,
-                            model_configuration=judge_model_configuration,
+                            model_configuration=(judge_model_configuration),
                         )
                     )
 
@@ -1072,7 +1108,7 @@ class EvaluationEngine:
                     self.evaluator_registry.register(
                         LLMJudgeEvaluator(
                             model_gateway=judge_model_gateway,
-                            model_configuration=judge_model_configuration,
+                            model_configuration=(judge_model_configuration),
                         )
                     )
 
@@ -1088,9 +1124,37 @@ class EvaluationEngine:
                     detail=(f"Failed to configure LLM judge evaluator: {exc}"),
                 ) from exc
 
-        # --------------------------------------------------------------
-        # 8. Load dataset cases
-        # --------------------------------------------------------------
+        # Reuse the same resolved judge gateway for rolling feedback
+        # reduction rather than resolving the judge model twice.
+        #
+        # An explicitly injected aggregation service is preserved.
+        if (
+            self.feedback_aggregation_service is None
+            and self.redis is not None
+            and judge_model_gateway is not None
+            and resolved_judge_model is not None
+        ):
+            judge_provider = (
+                resolved_judge_model.provider.value
+                if hasattr(
+                    resolved_judge_model.provider,
+                    "value",
+                )
+                else str(
+                    resolved_judge_model.provider,
+                )
+            )
+
+            feedback_reducer = EvaluationFeedbackReducer(
+                model_gateway=judge_model_gateway,
+                model=resolved_judge_model.model_identifier,
+                provider=judge_provider,
+            )
+
+            self.feedback_aggregation_service = EvaluationFeedbackAggregationService(
+                redis=self.redis,
+                reducer=feedback_reducer,
+            )
 
         cases = await DatasetCaseService.list(
             self.db,
@@ -1101,45 +1165,21 @@ class EvaluationEngine:
         run.completed_cases = 0
         run.failed_cases = 0
 
-        # --------------------------------------------------------------
-        # 9. Determine evaluation capabilities
-        # --------------------------------------------------------------
-
         evaluation_capabilities = self._get_evaluation_capabilities(
             run=run,
             cases=cases,
-            llm_available=judge_model_gateway is not None,
+            llm_available=(judge_model_gateway is not None),
         )
-
-        # --------------------------------------------------------------
-        # 10. Resolve and validate evaluators
-        # --------------------------------------------------------------
 
         evaluator_configs = self._get_evaluators(
             run,
             evaluation_capabilities,
         )
 
-        # --------------------------------------------------------------
-        # 11. Resolve scoring configuration
-        #
-        # PostgreSQL is the source of truth.
-        #
-        # ScoringConfigurationService first checks Redis and falls back
-        # to PostgreSQL when the cache is unavailable or misses.
-        #
-        # The resolved configuration is fetched once per run and then
-        # reused for every evaluation case.
-        # --------------------------------------------------------------
-
         scoring_configuration = await self.scoring_configuration_service.get(
             self.db,
             run.id,
         )
-
-        # --------------------------------------------------------------
-        # 12. Start evaluation timing
-        # --------------------------------------------------------------
 
         started_at = self._utc_now()
 
@@ -1150,10 +1190,6 @@ class EvaluationEngine:
 
         await self.db.commit()
         await self.db.refresh(run)
-
-        # --------------------------------------------------------------
-        # 13. Execute evaluation
-        # --------------------------------------------------------------
 
         try:
             if execution_mode == "sequential":
@@ -1177,31 +1213,145 @@ class EvaluationEngine:
                     scoring_configuration=scoring_configuration,
                 )
 
-            # ----------------------------------------------------------
-            # 14. Generate deterministic run-level feedback
-            #
-            # Case-level results have already been committed by the
-            # execution path, so the feedback service can safely query
-            # EvaluationResult records.
-            # ----------------------------------------------------------
+            # Rolling feedback is auxiliary qualitative processing.
+            # Failure here must not invalidate completed case results.
+            final_feedback = None
 
-            run.summary_feedback = await self.feedback_service.generate(
-                self.db,
-                run.id,
-            )
+            if self.feedback_aggregation_service is not None:
+                try:
+                    finalization = await self.feedback_aggregation_service.finalize(
+                        run.id,
+                    )
 
-            # ----------------------------------------------------------
-            # 15. Complete evaluation run
-            # ----------------------------------------------------------
+                    if finalization.get(
+                        "finalized",
+                    ):
+                        final_feedback = finalization.get(
+                            "feedback",
+                        )
 
+                except Exception:
+                    final_feedback = None
+
+            # Finalize timing before summary calculation so the summary
+            # contains the complete run duration.
             completed_at = self._utc_now()
 
-            run.status = EvaluationRunStatus.COMPLETED
             run.completed_at = completed_at
             run.duration_ms = self._calculate_duration_ms(
                 started_at,
                 completed_at,
             )
+
+            # Calculate deterministic metrics exclusively from persisted
+            # evaluation results. No final LLM calculation occurs here.
+            summary = await EvaluationRunSummaryService.calculate(
+                self.db,
+                run.id,
+            )
+
+            # The final LLM is qualitative enrichment only. It receives
+            # authoritative scores and performance data and does not
+            # calculate or modify any metric.
+            if judge_model_gateway is not None:
+                try:
+                    judge_model_name = (
+                        resolved_judge_model.model_identifier
+                        if resolved_judge_model is not None
+                        else judge_model_configuration.get(
+                            "model",
+                            "llama3.2:3b",
+                        )
+                    )
+
+                    judge_timeout = float(
+                        judge_model_configuration.get(
+                            "timeout",
+                            60.0,
+                        )
+                    )
+
+                    final_summary_feedback = (
+                        await EvaluationRunSummaryService.generate_final_feedback(
+                            model_gateway=judge_model_gateway,
+                            evaluation_run_id=run.id,
+                            overall_score=summary["overall_score"],
+                            metrics=summary["metrics"],
+                            performance=summary["performance"],
+                            rolling_feedback=final_feedback,
+                            model=judge_model_name,
+                            timeout=judge_timeout,
+                            base_url=(
+                                judge_model_configuration.get(
+                                    "base_url",
+                                )
+                            ),
+                        )
+                    )
+
+                    summary["feedback"] = final_summary_feedback
+
+                except Exception:
+                    # The deterministic summary remains authoritative when
+                    # final qualitative LLM synthesis fails.
+                    summary["feedback"] = (
+                        EvaluationRunSummaryService._build_final_fallback_feedback(
+                            overall_score=summary["overall_score"],
+                            metrics=summary["metrics"],
+                            performance=summary["performance"],
+                            completed_cases=summary["completed_cases"],
+                            failed_cases=summary["failed_cases"],
+                            rolling_feedback=final_feedback,
+                        )
+                    )
+
+            else:
+                summary["feedback"] = EvaluationRunSummaryService._build_final_fallback_feedback(
+                    overall_score=summary["overall_score"],
+                    metrics=summary["metrics"],
+                    performance=summary["performance"],
+                    completed_cases=summary["completed_cases"],
+                    failed_cases=summary["failed_cases"],
+                    rolling_feedback=final_feedback,
+                )
+
+            # PostgreSQL is the source of truth for the final summary.
+            await EvaluationSummaryPersistenceService.save(
+                self.db,
+                run.id,
+                summary,
+            )
+
+            # Redis is only a performance cache. Cache failures must not
+            # invalidate an otherwise successfully persisted evaluation.
+            if self.redis is not None:
+                try:
+                    from app.services.evaluation_engine.cache import (
+                        EvaluationSummaryCache,
+                    )
+
+                    await EvaluationSummaryCache(
+                        self.redis,
+                    ).set(
+                        run.id,
+                        summary,
+                    )
+                except Exception:
+                    pass
+
+            # Reducer state is transient and can be removed only after
+            # the final summary has been persisted.
+            if self.feedback_aggregation_service is not None:
+                try:
+                    await self.feedback_aggregation_service.clear(
+                        run.id,
+                    )
+                except Exception:
+                    pass
+
+            # Mark the run completed only after summary persistence has
+            # succeeded.
+            run.status = EvaluationRunStatus.COMPLETED
 
             await self.db.commit()
             await self.db.refresh(run)
@@ -1209,14 +1359,9 @@ class EvaluationEngine:
             return run
 
         except Exception:
-            # ----------------------------------------------------------
-            # 16. Unexpected engine-level failure
-            #
-            # Individual case failures are intentionally handled inside
-            # the execution methods and do not reach this block.
-            #
-            # This block represents an unexpected engine-level failure.
-            # ----------------------------------------------------------
+            # Individual case failures are isolated inside the execution
+            # methods. This block handles unexpected engine-level failures.
+            await self.db.rollback()
 
             completed_at = self._utc_now()
 

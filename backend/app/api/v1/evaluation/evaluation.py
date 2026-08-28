@@ -13,10 +13,9 @@ from app.schemas.evaluation import (
     EvaluationRunUpdate,
 )
 from app.services.evaluation import EvaluationRunService
+from app.services.evaluation_engine.cache import EvaluationSummaryCache
 from app.services.evaluation_engine.engine import EvaluationEngine
-from app.services.evaluation_engine.feedback import (
-    EvaluationRunFeedbackService,
-)
+
 from app.services.evaluation_engine.scoring_config import (
     ScoringConfigurationService,
 )
@@ -26,6 +25,9 @@ from app.services.evaluators.applicability import (
     EvaluatorApplicabilityService,
 )
 from app.services.scoring import ScoringService
+from app.services.evaluation_engine.summary_persistence import (
+    EvaluationSummaryPersistenceService,
+)
 
 router = APIRouter(
     prefix="/evaluation-runs",
@@ -132,11 +134,98 @@ async def delete_evaluation_run(
 async def get_evaluation_run_summary(
     run_id: UUID,
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
+    cache = EvaluationSummaryCache(redis)
+
+    # --------------------------------------------------------------
+    # 1. Redis cache
+    # --------------------------------------------------------------
+
+    try:
+        cached_summary = await cache.get(run_id)
+
+        if cached_summary is not None:
+            return cached_summary
+
+    except Exception:
+        # Cache is optional. PostgreSQL remains authoritative.
+        pass
+
+    # --------------------------------------------------------------
+    # 2. Persisted PostgreSQL summary
+    # --------------------------------------------------------------
+
+    persisted_summary = await EvaluationSummaryPersistenceService.get(
+        db,
+        run_id,
+    )
+
+    if persisted_summary is not None:
+        summary = {
+            "model": persisted_summary.metadata.get("model")
+            if isinstance(persisted_summary.metadata, dict)
+            else None,
+            "overall_score": persisted_summary.overall_score,
+            "metrics": persisted_summary.metrics,
+            "feedback": persisted_summary.feedback,
+            "total_results": (
+                persisted_summary.performance.get(
+                    "total_results",
+                    0,
+                )
+                if isinstance(persisted_summary.performance, dict)
+                else 0
+            ),
+            "completed_cases": (
+                persisted_summary.performance.get(
+                    "completed_cases",
+                    0,
+                )
+                if isinstance(persisted_summary.performance, dict)
+                else 0
+            ),
+            "failed_cases": (
+                persisted_summary.performance.get(
+                    "failed_cases",
+                    0,
+                )
+                if isinstance(persisted_summary.performance, dict)
+                else 0
+            ),
+            "performance": persisted_summary.performance,
+        }
+
+        try:
+            await cache.set(
+                run_id,
+                summary,
+            )
+        except Exception:
+            pass
+
+        return summary
+
+    # --------------------------------------------------------------
+    # 3. Fallback calculation
+    # --------------------------------------------------------------
+
     summary = await EvaluationRunSummaryService.calculate(
         db,
         run_id,
     )
+
+    # --------------------------------------------------------------
+    # 4. Cache calculated fallback
+    # --------------------------------------------------------------
+
+    try:
+        await cache.set(
+            run_id,
+            summary,
+        )
+    except Exception:
+        pass
 
     return summary
 
@@ -162,8 +251,6 @@ async def execute_evaluation_run(
         redis=redis,
     )
 
-    feedback_service = EvaluationRunFeedbackService()
-
     engine = EvaluationEngine(
         db=db,
         model_gateway=None,
@@ -171,7 +258,7 @@ async def execute_evaluation_run(
         applicability_service=applicability_service,
         scoring_service=scoring_service,
         scoring_configuration_service=scoring_configuration_service,
-        feedback_service=feedback_service,
+        redis=redis,
     )
 
     return await engine.execute(run_id)

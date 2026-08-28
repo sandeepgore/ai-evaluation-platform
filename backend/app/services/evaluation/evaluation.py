@@ -96,7 +96,6 @@ class EvaluationRunService:
             # ----------------------------------------------------------
             evaluation_type=data.evaluation_type,
             configuration=data.configuration,
-            summary_feedback=None,
             total_cases=dataset_version.case_count,
             completed_cases=0,
             failed_cases=0,

@@ -21,7 +21,6 @@ class EvaluationRunUpdate(BaseModel):
     status: EvaluationRunStatus | None = None
     evaluation_type: EvaluationType | None = None
     configuration: dict[str, Any] | None = None
-    summary_feedback: str | None = None
     total_cases: int | None = Field(None, ge=0)
     completed_cases: int | None = Field(None, ge=0)
     failed_cases: int | None = Field(None, ge=0)
@@ -36,7 +35,6 @@ class EvaluationRunResponse(BaseModel):
     status: EvaluationRunStatus
     evaluation_type: EvaluationType
     configuration: dict[str, Any] | None
-    summary_feedback: str | None
     total_cases: int
     completed_cases: int
     failed_cases: int

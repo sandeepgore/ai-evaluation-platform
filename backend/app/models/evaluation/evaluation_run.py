@@ -3,7 +3,7 @@ from enum import Enum
 import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -68,11 +68,6 @@ class EvaluationRun(TimestampMixin, Base):
 
     configuration: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
-        nullable=True,
-    )
-
-    summary_feedback: Mapped[str | None] = mapped_column(
-        Text,
         nullable=True,
     )
 
