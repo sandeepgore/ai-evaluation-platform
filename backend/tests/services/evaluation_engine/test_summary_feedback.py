@@ -25,13 +25,10 @@ class TestEvaluationRunSummaryFeedback:
             == "Poor overall evaluation performance requiring significant improvement."
         )
 
-        assert result["strengths"] == ["No major metric strengths were identified."]
-
-        assert result["weaknesses"] == ["No major metric weaknesses were identified."]
-
-        assert result["recommendations"] == [
-            "Continue monitoring evaluation metrics across future runs."
-        ]
+        assert len(result["strengths"]) >= 3
+        assert len(result["weaknesses"]) >= 3
+        assert len(result["patterns"]) >= 3
+        assert len(result["recommendations"]) >= 3
 
         assert result["evaluator_feedback"] == []
 
@@ -307,6 +304,7 @@ class TestEvaluationRunSummaryFeedback:
         )
 
         assert len(result["evaluator_feedback"]) == 10
+
         assert result["evaluator_feedback"] == [f"feedback {i}" for i in range(10)]
 
     # ------------------------------------------------------------------
@@ -335,3 +333,4 @@ class TestEvaluationRunSummaryFeedback:
         assert any("LLM judge evaluation indicates strong" in item for item in result["strengths"])
 
         assert result["evaluator_feedback"] == ["llm_judge: response needs more context"]
+

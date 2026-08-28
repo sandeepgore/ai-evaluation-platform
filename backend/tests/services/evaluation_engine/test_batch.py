@@ -1,20 +1,58 @@
-import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
+
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_type import EvaluationType
 from app.schemas.model_gateway import ModelResponse
 from app.schemas.model_gateway.batch_response import BatchModelResponse
-from app.services.evaluation_engine.engine import EvaluationEngine
 from app.services.evaluation_engine import engine as engine_module
-
+from app.services.evaluation_engine.engine import EvaluationEngine
 from tests.services.evaluation_engine.test_engine import FakeRegistry
-from app.models.evaluation.evaluation_type import EvaluationType
+
+
+def mock_run_summary_services(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        engine_module.EvaluationRunSummaryService,
+        "calculate",
+        AsyncMock(
+            return_value={
+                "model": None,
+                "overall_score": 0.0,
+                "metrics": {},
+                "total_results": 0,
+                "completed_cases": 0,
+                "failed_cases": 0,
+                "feedback": {
+                    "overall": "Test summary.",
+                    "strengths": [],
+                    "weaknesses": [],
+                    "patterns": [],
+                    "recommendations": [],
+                    "evaluator_feedback": [],
+                },
+                "performance": {},
+            }
+        ),
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationSummaryPersistenceService,
+        "save",
+        AsyncMock(
+            return_value=SimpleNamespace(),
+        ),
+    )
 
 
 @pytest.mark.asyncio
-async def test_engine_handles_batch_inference_failure_and_continues():
+async def test_engine_handles_batch_inference_failure_and_continues(
+    monkeypatch,
+):
     """
     When one batch fails during model inference:
 
@@ -30,10 +68,6 @@ async def test_engine_handles_batch_inference_failure_and_continues():
     run_id = uuid4()
     model_id = uuid4()
     dataset_version_id = uuid4()
-
-    # --------------------------------------------------------------
-    # Create 20 dataset cases
-    # --------------------------------------------------------------
 
     cases = [
         SimpleNamespace(
@@ -78,36 +112,28 @@ async def test_engine_handles_batch_inference_failure_and_continues():
 
     model = SimpleNamespace(
         id=model_id,
+        name="Mock Model",
+        provider="mock",
         model_identifier="mock-model",
         configuration={},
         is_active=True,
     )
 
-    # --------------------------------------------------------------
-    # Database mock
-    # --------------------------------------------------------------
-
     db = MagicMock()
 
     result = MagicMock()
 
-    # Used by EvaluationEngine for model lookup.
     result.scalar_one_or_none.return_value = model
-
-    # Used by EvaluationRunFeedbackService.
     result.scalars.return_value.all.return_value = []
 
-    db.execute = AsyncMock(return_value=result)
+    db.execute = AsyncMock(
+        return_value=result,
+    )
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
-    # --------------------------------------------------------------
-    # Model gateway
-    # --------------------------------------------------------------
-
     model_gateway = MagicMock()
-
     model_gateway.generate = AsyncMock()
 
     def successful_response(index: int) -> ModelResponse:
@@ -130,37 +156,20 @@ async def test_engine_handles_batch_inference_failure_and_continues():
                 response=successful_response(index),
                 error=None,
             )
-            for index in range(start_index, end_index + 1)
+            for index in range(
+                start_index,
+                end_index + 1,
+            )
         ]
 
     model_gateway.generate_batch = AsyncMock(
         side_effect=[
-            # ------------------------------------------------------
-            # Batch 1 -> GATEWAY FAILURE
-            # Cases 1-5
-            # ------------------------------------------------------
             RuntimeError("Simulated batch inference failure"),
-            # ------------------------------------------------------
-            # Batch 2 -> SUCCESS
-            # Cases 6-10
-            # ------------------------------------------------------
             successful_batch(6, 10),
-            # ------------------------------------------------------
-            # Batch 3 -> SUCCESS
-            # Cases 11-15
-            # ------------------------------------------------------
             successful_batch(11, 15),
-            # ------------------------------------------------------
-            # Batch 4 -> SUCCESS
-            # Cases 16-20
-            # ------------------------------------------------------
             successful_batch(16, 20),
         ]
     )
-
-    # --------------------------------------------------------------
-    # Scoring
-    # --------------------------------------------------------------
 
     scoring_service = MagicMock()
 
@@ -171,19 +180,29 @@ async def test_engine_handles_batch_inference_failure_and_continues():
         },
     )
 
-    # --------------------------------------------------------------
-    # Patch engine dependencies
-    # --------------------------------------------------------------
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
 
-    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=cases),
+    )
 
-    engine_module.DatasetCaseService.list = AsyncMock(return_value=cases)
+    evaluation_result_create = AsyncMock()
 
-    engine_module.EvaluationResultService.create = AsyncMock()
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        evaluation_result_create,
+    )
 
-    # --------------------------------------------------------------
-    # Create engine
-    # --------------------------------------------------------------
+    mock_run_summary_services(
+        monkeypatch,
+    )
 
     engine = EvaluationEngine(
         db=db,
@@ -192,36 +211,20 @@ async def test_engine_handles_batch_inference_failure_and_continues():
         scoring_service=scoring_service,
     )
 
-    # --------------------------------------------------------------
-    # Execute
-    # --------------------------------------------------------------
-
     result = await engine.execute(run_id)
 
-    # --------------------------------------------------------------
-    # Run assertions
-    # --------------------------------------------------------------
-
     assert result.status == EvaluationRunStatus.COMPLETED
-
     assert result.total_cases == 20
-
     assert result.completed_cases == 15
-
     assert result.failed_cases == 5
-
-    # --------------------------------------------------------------
-    # Four batches should have been attempted
-    # --------------------------------------------------------------
 
     assert model_gateway.generate_batch.await_count == 4
 
-    # Sequential generate() must not be used.
     model_gateway.generate.assert_not_awaited()
 
-    # --------------------------------------------------------------
-    # Verify batch sizes and ordering
-    # --------------------------------------------------------------
+    assert evaluation_result_create.await_count == 20
+
+    assert scoring_service.calculate.call_count == 15
 
     calls = model_gateway.generate_batch.await_args_list
 
@@ -259,21 +262,11 @@ async def test_engine_handles_batch_inference_failure_and_continues():
         "Question 20",
     ]
 
-    # --------------------------------------------------------------
-    # Every case should produce an EvaluationResult
-    # --------------------------------------------------------------
-
-    assert engine_module.EvaluationResultService.create.await_count == 20
-
-    # --------------------------------------------------------------
-    # Only successful cases should be evaluated/scored
-    # --------------------------------------------------------------
-
-    assert scoring_service.calculate.call_count == 15
-
 
 @pytest.mark.asyncio
-async def test_engine_isolates_individual_batch_item_failure():
+async def test_engine_isolates_individual_batch_item_failure(
+    monkeypatch,
+):
     """
     One item in a batch may fail while the other items succeed.
 
@@ -315,33 +308,26 @@ async def test_engine_isolates_individual_batch_item_failure():
 
     model = SimpleNamespace(
         id=model_id,
+        name="Mock Model",
+        provider="mock",
         model_identifier="mock-model",
         configuration={},
         is_active=True,
     )
 
-    # --------------------------------------------------------------
-    # Database mock
-    # --------------------------------------------------------------
-
     db = MagicMock()
 
     result = MagicMock()
 
-    # Used by EvaluationEngine for model lookup.
     result.scalar_one_or_none.return_value = model
-
-    # Used by EvaluationRunFeedbackService.
     result.scalars.return_value.all.return_value = []
 
-    db.execute = AsyncMock(return_value=result)
+    db.execute = AsyncMock(
+        return_value=result,
+    )
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
-
-    # --------------------------------------------------------------
-    # Model responses
-    # --------------------------------------------------------------
 
     successful_response = ModelResponse(
         output="Answer",
@@ -379,10 +365,6 @@ async def test_engine_isolates_individual_batch_item_failure():
 
     model_gateway.generate = AsyncMock()
 
-    # --------------------------------------------------------------
-    # Scoring
-    # --------------------------------------------------------------
-
     scoring_service = MagicMock()
 
     scoring_service.calculate.return_value = SimpleNamespace(
@@ -392,19 +374,29 @@ async def test_engine_isolates_individual_batch_item_failure():
         },
     )
 
-    # --------------------------------------------------------------
-    # Patch engine dependencies
-    # --------------------------------------------------------------
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
 
-    engine_module.EvaluationRunService.get_by_id = AsyncMock(return_value=run)
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=cases),
+    )
 
-    engine_module.DatasetCaseService.list = AsyncMock(return_value=cases)
+    evaluation_result_create = AsyncMock()
 
-    engine_module.EvaluationResultService.create = AsyncMock()
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        evaluation_result_create,
+    )
 
-    # --------------------------------------------------------------
-    # Create engine
-    # --------------------------------------------------------------
+    mock_run_summary_services(
+        monkeypatch,
+    )
 
     engine = EvaluationEngine(
         db=db,
@@ -413,43 +405,23 @@ async def test_engine_isolates_individual_batch_item_failure():
         scoring_service=scoring_service,
     )
 
-    # --------------------------------------------------------------
-    # Execute
-    # --------------------------------------------------------------
-
     result = await engine.execute(run_id)
 
-    # --------------------------------------------------------------
-    # Run assertions
-    # --------------------------------------------------------------
-
     assert result.status == EvaluationRunStatus.COMPLETED
-
     assert result.total_cases == 3
-
     assert result.completed_cases == 2
-
     assert result.failed_cases == 1
 
-    # Batch inference should be called once.
     model_gateway.generate_batch.assert_awaited_once()
-
-    # Sequential generate() must not be used.
     model_gateway.generate.assert_not_awaited()
 
-    # Only successful cases should be scored.
     assert scoring_service.calculate.call_count == 2
 
-    # Every case should have an EvaluationResult.
-    assert engine_module.EvaluationResultService.create.await_count == 3
-
-    # --------------------------------------------------------------
-    # Verify failed item
-    # --------------------------------------------------------------
+    assert evaluation_result_create.await_count == 3
 
     failed_calls = [
         call
-        for call in (engine_module.EvaluationResultService.create.await_args_list)
+        for call in evaluation_result_create.await_args_list
         if call.kwargs["status"] == "failed"
     ]
 
@@ -458,7 +430,5 @@ async def test_engine_isolates_individual_batch_item_failure():
     failed_call = failed_calls[0]
 
     assert failed_call.kwargs["actual_output"] is None
-
     assert failed_call.kwargs["scores"] == {}
-
     assert "ReadTimeout" in failed_call.kwargs["error_message"]
