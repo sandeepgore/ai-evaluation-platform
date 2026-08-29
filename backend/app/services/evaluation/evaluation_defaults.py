@@ -130,7 +130,9 @@ class DefaultEvaluationResolver:
         policy: DataPolicy = DataPolicy.STRICT,
         threshold: float = 1.0,
     ) -> list[DefaultEvaluatorDecision]:
-        rules = DefaultEvaluationPolicy.get_rules(evaluation_type)
+        rules = DefaultEvaluationPolicy.get_rules(
+            evaluation_type,
+        )
 
         decisions: list[DefaultEvaluatorDecision] = []
 
@@ -153,7 +155,9 @@ class DefaultEvaluationResolver:
                     DefaultEvaluatorDecision(
                         evaluator_name=rule.evaluator_name,
                         selected=False,
-                        reason="; ".join(failed_requirements),
+                        reason="; ".join(
+                            failed_requirements,
+                        ),
                     )
                 )
             else:
