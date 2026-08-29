@@ -53,4 +53,7 @@ class JudgeConfiguration:
 
         configuration.update(self.extra_configuration)
 
+        # Structured JSON output is required by the judge contract.
+        configuration["response_format"] = "json"
+
         return configuration

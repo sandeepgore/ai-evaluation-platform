@@ -372,6 +372,7 @@ async def test_evaluate_passes_model_configuration_to_gateway():
     assert configuration["timeout"] == 30.0
     assert configuration["temperature"] == 0.2
     assert configuration["base_url"] == "http://localhost:11434"
+    assert configuration["response_format"] == "json"
 
 
 @pytest.mark.asyncio
