@@ -139,12 +139,6 @@ class LLMJudgeEvaluator(Evaluator):
             1.0,
         )
 
-        # response_format is controlled by JudgeService.
-        configuration.pop(
-            "response_format",
-            None,
-        )
-
         return JudgeConfiguration(
             provider=provider,
             model=model,
