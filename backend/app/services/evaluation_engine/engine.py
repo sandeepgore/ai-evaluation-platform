@@ -14,6 +14,7 @@ from app.schemas.model_gateway.response import ModelResponse
 from app.services.dataset_case import DatasetCaseService
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation.dataset_capability import (
+    DatasetCapabilities,
     DatasetCapabilityAnalyzer,
 )
 from app.services.evaluation_engine.feedback_aggregation import (
@@ -43,6 +44,7 @@ from app.services.model_gateway import (
     ModelGatewayFactory,
 )
 from app.services.scoring import ScoringService
+from app.services.evaluation.evaluation_defaults import DefaultEvaluationResolver
 
 
 class EvaluationEngine:
@@ -145,28 +147,16 @@ class EvaluationEngine:
         self,
         *,
         run: EvaluationRun,
-        cases: list[Any],
+        dataset_capabilities: DatasetCapabilities,
         llm_available: bool = False,
     ) -> EvaluationCapabilities:
         """
         Determine the capabilities available to the evaluation run.
-
-        Dataset capabilities are delegated to DatasetCapabilityAnalyzer.
-
-        A capability is considered available for evaluator applicability
-        only when every case in the evaluation dataset provides it.
-
-        The evaluator LLM remains separate from the model being evaluated.
         """
 
         evaluation_type = run.evaluation_type.value
 
-        dataset_capabilities = DatasetCapabilityAnalyzer.analyze(
-            cases,
-        )
-
         has_reference = dataset_capabilities.all_cases_have_reference
-
         has_context = dataset_capabilities.all_cases_have_context
 
         available_inputs: set[str] = {
@@ -174,19 +164,12 @@ class EvaluationEngine:
         }
 
         if has_reference:
-            available_inputs.add(
-                "expected_output",
-            )
+            available_inputs.add("expected_output")
 
         if has_context:
-            available_inputs.add(
-                "context",
-            )
+            available_inputs.add("context")
 
-        if not isinstance(
-            llm_available,
-            bool,
-        ):
+        if not isinstance(llm_available, bool):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="'llm_available' must be a boolean.",
@@ -200,40 +183,11 @@ class EvaluationEngine:
             available_inputs=frozenset(available_inputs),
         )
 
-    def _get_default_evaluator_names(
-        self,
-        evaluation_type: str,
-    ) -> list[str]:
-        """
-        Return the default evaluators for an evaluation type.
-
-        Explicit evaluator configuration always takes precedence.
-        """
-
-        defaults = {
-            "text": [
-                "exact_match",
-                "contains",
-                "f1",
-                "bleu",
-                "rouge_l",
-            ],
-            "rag": [
-                "relevance",
-                "faithfulness",
-                "f1",
-            ],
-        }
-
-        return defaults.get(
-            evaluation_type,
-            ["exact_match"],
-        )
-
     def _get_evaluators(
         self,
         run: EvaluationRun,
         capabilities: EvaluationCapabilities,
+        dataset_capabilities: DatasetCapabilities,
     ) -> list[tuple[Evaluator, float]]:
         """
         Resolve and validate evaluators configured for the evaluation run.
@@ -247,17 +201,22 @@ class EvaluationEngine:
 
         evaluation_type = run.evaluation_type.value
 
-        evaluator_config: list[str | dict[str, Any]] = self._get_default_evaluator_names(
-            evaluation_type,
-        )
+        evaluator_config: list[str | dict[str, Any]]
 
         if run.configuration:
             configured_evaluators = run.configuration.get(
                 "evaluators",
             )
+        else:
+            configured_evaluators = None
 
-            if configured_evaluators:
-                evaluator_config = configured_evaluators
+        if configured_evaluators:
+            evaluator_config = configured_evaluators
+        else:
+            evaluator_config = DefaultEvaluationResolver.resolve(
+                evaluation_type,
+                dataset_capabilities,
+            )
 
         if not isinstance(
             evaluator_config,
@@ -1165,15 +1124,20 @@ class EvaluationEngine:
         run.completed_cases = 0
         run.failed_cases = 0
 
+        dataset_capabilities = DatasetCapabilityAnalyzer.analyze(
+            cases,
+        )
+
         evaluation_capabilities = self._get_evaluation_capabilities(
             run=run,
-            cases=cases,
+            dataset_capabilities=dataset_capabilities,
             llm_available=(judge_model_gateway is not None),
         )
 
         evaluator_configs = self._get_evaluators(
             run,
             evaluation_capabilities,
+            dataset_capabilities,
         )
 
         scoring_configuration = await self.scoring_configuration_service.get(
