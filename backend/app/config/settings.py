@@ -9,12 +9,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
 
-    database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_evaluation"
-    )
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_evaluation"
 
     redis_url: str = "redis://localhost:6379/0"
-
+    dataset_insert_batch_size: int = 2_000
     model_gateway_timeout: int = 60
 
     model_config = SettingsConfigDict(
