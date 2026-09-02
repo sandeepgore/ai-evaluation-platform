@@ -1,7 +1,8 @@
+from typing import Any
 import uuid
 from enum import Enum
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,6 +60,11 @@ class DatasetVersion(TimestampMixin, Base):
         Integer,
         nullable=False,
         default=0,
+    )
+
+    analytics: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
     )
 
     is_active: Mapped[bool] = mapped_column(

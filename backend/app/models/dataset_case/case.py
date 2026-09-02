@@ -50,6 +50,18 @@ class DatasetCase(TimestampMixin, Base):
         nullable=True,
     )
 
+    has_reference: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    has_context: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     position: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

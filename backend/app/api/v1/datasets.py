@@ -3,13 +3,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.dataset_version.dataset_version import DatasetVersionResponse
 from app.db.session import get_db
 from app.schemas.dataset.dataset import (
     DatasetCreate,
     DatasetResponse,
     DatasetUpdate,
 )
+from app.schemas.dataset_ingestion.dataset_import import DatasetImportPayload
 from app.services.dataset.dataset import DatasetService
+from app.services.dataset_ingestion.service import DatasetImportService
 
 router = APIRouter(
     prefix="/datasets",
@@ -37,6 +40,24 @@ async def create_dataset(
         )
 
     return dataset
+
+
+@router.post(
+    "/{dataset_id}/import",
+    response_model=DatasetVersionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_dataset(
+    dataset_id: UUID,
+    data: DatasetImportPayload,
+    db: AsyncSession = Depends(get_db),
+):
+    service = DatasetImportService(db)
+
+    return await service.import_json(
+        dataset_id=dataset_id,
+        payload=data,
+    )
 
 
 @router.get(
