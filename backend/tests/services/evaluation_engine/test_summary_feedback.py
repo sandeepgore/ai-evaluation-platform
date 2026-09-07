@@ -22,14 +22,13 @@ class TestEvaluationRunSummaryFeedback:
 
         assert (
             result["overall"]
-            == "Poor overall evaluation performance requiring significant improvement."
+            == "No applicable overall evaluation score was available for this run."
         )
 
         assert len(result["strengths"]) >= 3
         assert len(result["weaknesses"]) >= 3
         assert len(result["patterns"]) >= 3
         assert len(result["recommendations"]) >= 3
-
         assert result["evaluator_feedback"] == []
 
     # ------------------------------------------------------------------
@@ -53,8 +52,8 @@ class TestEvaluationRunSummaryFeedback:
         assert "Relevance is acceptable but has room for improvement." in result["weaknesses"]
 
         assert (
-            "Keep responses more directly aligned with the question and supporting context."
-            in result["recommendations"]
+            "Keep responses more directly aligned with the question "
+            "and supporting context." in result["recommendations"]
         )
 
     def test_low_relevance_is_weakness(self):
@@ -193,8 +192,8 @@ class TestEvaluationRunSummaryFeedback:
         )
 
         assert (
-            "LLM judge evaluation indicates acceptable but improvable response quality."
-            in result["weaknesses"]
+            "LLM judge evaluation indicates acceptable but improvable "
+            "response quality." in result["weaknesses"]
         )
 
         assert any("Review judge feedback" in item for item in result["recommendations"])
@@ -220,6 +219,7 @@ class TestEvaluationRunSummaryFeedback:
                 "faithfulness": 0.9,
             },
             completed_results=[],
+            overall_score=0.9,
         )
 
         assert result["overall"] == "Strong overall evaluation performance."
@@ -231,11 +231,12 @@ class TestEvaluationRunSummaryFeedback:
                 "faithfulness": 0.6,
             },
             completed_results=[],
+            overall_score=0.65,
         )
 
         assert (
-            result["overall"]
-            == "Moderate overall evaluation performance with some areas for improvement."
+            result["overall"] == "Moderate overall evaluation performance "
+            "with some areas for improvement."
         )
 
     def test_below_average_overall_performance(self):
@@ -245,11 +246,12 @@ class TestEvaluationRunSummaryFeedback:
                 "faithfulness": 0.3,
             },
             completed_results=[],
+            overall_score=0.4,
         )
 
         assert (
-            result["overall"]
-            == "Below-average evaluation performance with several areas requiring improvement."
+            result["overall"] == "Below-average evaluation performance with "
+            "several areas requiring improvement."
         )
 
     def test_poor_overall_performance(self):
@@ -259,11 +261,12 @@ class TestEvaluationRunSummaryFeedback:
                 "faithfulness": 0.3,
             },
             completed_results=[],
+            overall_score=0.25,
         )
 
         assert (
-            result["overall"]
-            == "Poor overall evaluation performance requiring significant improvement."
+            result["overall"] == "Poor overall evaluation performance requiring "
+            "significant improvement."
         )
 
     # ------------------------------------------------------------------
@@ -324,8 +327,6 @@ class TestEvaluationRunSummaryFeedback:
 
         assert "High relevance to the evaluation context." in result["strengths"]
 
-        assert any("Strong faithfulness" not in item for item in result["strengths"])
-
         assert any("Faithfulness can be improved" in item for item in result["weaknesses"])
 
         assert any("Low F1" in item for item in result["weaknesses"])
@@ -333,4 +334,3 @@ class TestEvaluationRunSummaryFeedback:
         assert any("LLM judge evaluation indicates strong" in item for item in result["strengths"])
 
         assert result["evaluator_feedback"] == ["llm_judge: response needs more context"]
-

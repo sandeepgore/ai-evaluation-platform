@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+from app.services.evaluation.run_validation import EvaluationRunValidationError
 import pytest
 from fastapi.testclient import TestClient
 
@@ -80,6 +81,51 @@ def test_create_evaluation_run():
     assert data["name"] == "API Test Evaluation"
     assert data["status"] == run.status.value
     assert data["total_cases"] == 1
+
+
+def test_create_evaluation_run_returns_400_when_validation_fails():
+    validation_error = EvaluationRunValidationError(
+        {
+            "message": "Evaluation run violates the selected data policy.",
+            "policy": "strict",
+            "requirement": "reference",
+            "coverage": 0.5,
+            "required_coverage": 1.0,
+            "reason": "Strict policy requires complete reference coverage.",
+        }
+    )
+
+    with patch(
+        "app.api.v1.evaluation.evaluation.EvaluationRunService.create",
+        new=AsyncMock(side_effect=validation_error),
+    ) as create_mock:
+        response = client.post(
+            "/api/v1/evaluation-runs",
+            json={
+                "dataset_version_id": str(uuid4()),
+                "model_id": str(uuid4()),
+                "name": "Strict Policy Validation Test",
+                "configuration": {
+                    "evaluators": ["exact_match"],
+                    "data_policy": {
+                        "type": "strict",
+                    },
+                },
+            },
+        )
+
+    assert response.status_code == 400
+
+    detail = response.json()["detail"]
+
+    assert detail["message"] == ("Evaluation run violates the selected data policy.")
+    assert detail["policy"] == "strict"
+    assert detail["requirement"] == "reference"
+    assert detail["coverage"] == 0.5
+    assert detail["required_coverage"] == 1.0
+    assert detail["reason"] == ("Strict policy requires complete reference coverage.")
+
+    create_mock.assert_awaited_once()
 
 
 def test_get_evaluation_run():

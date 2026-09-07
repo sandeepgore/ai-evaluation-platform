@@ -72,10 +72,25 @@ class DatasetImportService:
             for position, imported_case in enumerate(payload.cases):
                 has_reference = imported_case.expected_output is not None
 
-                # Context support is intentionally false for the
-                # current JSON contract. It can be enabled when the
-                # ingestion schema gains an explicit context field.
                 has_context = False
+
+                if isinstance(imported_case.metadata, dict):
+                    for key in (
+                        "context",
+                        "retrieved_context",
+                        "reference_context",
+                    ):
+                        value = imported_case.metadata.get(key)
+
+                        if isinstance(value, str):
+                            if value.strip():
+                                has_context = True
+                                break
+
+                        elif isinstance(value, (list, tuple)):
+                            if any(isinstance(item, str) and item.strip() for item in value):
+                                has_context = True
+                                break
 
                 analytics.observe(
                     has_reference=has_reference,

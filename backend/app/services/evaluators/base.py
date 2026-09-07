@@ -28,6 +28,7 @@ class EvaluatorMetadata:
 
     requires_reference: bool = False
     requires_context: bool = False
+    requires_supporting_context: bool = False
     requires_llm: bool = False
 
     applicable_to: tuple[str, ...] = ("text",)

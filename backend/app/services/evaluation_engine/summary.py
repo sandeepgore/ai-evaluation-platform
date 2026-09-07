@@ -28,6 +28,14 @@ class EvaluationRunSummaryService:
         - final rolling reducer feedback
 
     Metric scores are never recalculated by the LLM.
+
+    Metric applicability is tracked independently from metric scores:
+
+        applicable      -> contributes to metric average
+        not_applicable  -> excluded from metric average
+        failed          -> execution failure, excluded from metric average
+
+    N/A is never interpreted as a zero score.
     """
 
     @staticmethod
@@ -48,6 +56,7 @@ class EvaluationRunSummaryService:
             return {
                 "overall_score": 0.0,
                 "metrics": {},
+                "metric_applicability": {},
                 "total_results": 0,
                 "completed_cases": 0,
                 "failed_cases": 0,
@@ -77,6 +86,9 @@ class EvaluationRunSummaryService:
                         input_tokens=0,
                         output_tokens=0,
                     ),
+                    "total_results": 0,
+                    "completed_cases": 0,
+                    "failed_cases": 0,
                 },
             }
 
@@ -129,43 +141,136 @@ class EvaluationRunSummaryService:
         failed_results = [item for item in results if item.status == "failed"]
 
         # --------------------------------------------------------------
-        # Evaluation metrics
+        # Discover persisted metrics
+        #
+        # We discover metric names first so failed cases can be reflected
+        # in applicability statistics for metrics that are known from the
+        # run's persisted results.
+        # --------------------------------------------------------------
+
+        metric_names: set[str] = set()
+
+        for result in results:
+            scores = result.scores or {}
+
+            if not isinstance(scores, dict):
+                continue
+
+            for metric_name in scores:
+                if metric_name != "overall":
+                    metric_names.add(metric_name)
+
+        # --------------------------------------------------------------
+        # Evaluation metrics + metric applicability
         # --------------------------------------------------------------
 
         metric_totals: dict[str, float] = {}
         metric_counts: dict[str, int] = {}
 
+        metric_applicability: dict[str, dict[str, int]] = {
+            metric_name: {
+                "total": len(results),
+                "applicable": 0,
+                "not_applicable": 0,
+                "failed": 0,
+            }
+            for metric_name in metric_names
+        }
+
         overall_total = 0.0
         overall_count = 0
 
-        for result in completed_results:
+        for result in results:
             scores = result.scores or {}
 
-            for metric_name, metric_data in scores.items():
+            if not isinstance(scores, dict):
+                scores = {}
+
+            # ----------------------------------------------------------
+            # Failed case
+            #
+            # A failed case has no metric-level execution result, so
+            # every known metric is counted as failed for this case.
+            # ----------------------------------------------------------
+
+            if result.status == "failed":
+                for metric_name in metric_names:
+                    metric_applicability[metric_name]["failed"] += 1
+
+                continue
+
+            # ----------------------------------------------------------
+            # Completed case
+            # ----------------------------------------------------------
+
+            if result.status != "completed":
+                continue
+
+            for metric_name in metric_names:
+                metric_data = scores.get(metric_name)
+
                 if not isinstance(metric_data, dict):
                     continue
+
+                metric_status = metric_data.get("status")
+
+                # ------------------------------------------------------
+                # Explicitly persisted N/A
+                # ------------------------------------------------------
+
+                if metric_status == "not_applicable":
+                    metric_applicability[metric_name]["not_applicable"] += 1
+                    continue
+
+                # ------------------------------------------------------
+                # Completed metric
+                #
+                # Backward compatibility:
+                # older persisted results may not have a "status"
+                # field, but a numeric score still represents an
+                # applicable metric result.
+                # ------------------------------------------------------
 
                 score = metric_data.get("score")
 
                 if isinstance(score, bool):
                     continue
 
-                if not isinstance(
-                    score,
-                    (int, float),
-                ):
+                if not isinstance(score, (int, float)):
                     continue
 
                 score = float(score)
 
-                if metric_name == "overall":
-                    overall_total += score
-                    overall_count += 1
-                    continue
+                metric_applicability[metric_name]["applicable"] += 1
 
                 metric_totals[metric_name] = metric_totals.get(metric_name, 0.0) + score
 
                 metric_counts[metric_name] = metric_counts.get(metric_name, 0) + 1
+
+            # ----------------------------------------------------------
+            # Overall score
+            #
+            # The engine persists overall.score=None when no selected
+            # evaluator is applicable to the case.
+            #
+            # Therefore only numeric overall scores contribute.
+            # ----------------------------------------------------------
+
+            overall_data = scores.get("overall")
+
+            if not isinstance(overall_data, dict):
+                continue
+
+            overall_score = overall_data.get("score")
+
+            if isinstance(overall_score, bool):
+                continue
+
+            if not isinstance(overall_score, (int, float)):
+                continue
+
+            overall_total += float(overall_score)
+            overall_count += 1
 
         metrics = {
             metric_name: metric_totals[metric_name] / metric_counts[metric_name]
@@ -173,7 +278,34 @@ class EvaluationRunSummaryService:
             if metric_counts[metric_name] > 0
         }
 
-        overall_score = overall_total / overall_count if overall_count > 0 else 0.0
+        # --------------------------------------------------------------
+        # Applicability coverage
+        # --------------------------------------------------------------
+
+        metric_applicability_summary: dict[str, dict[str, Any]] = {}
+
+        for metric_name, counts in metric_applicability.items():
+            total = counts["total"]
+            applicable = counts["applicable"]
+
+            coverage = applicable / total if total > 0 else 0.0
+
+            metric_applicability_summary[metric_name] = {
+                "total": total,
+                "applicable": applicable,
+                "not_applicable": counts["not_applicable"],
+                "failed": counts["failed"],
+                "coverage": coverage,
+            }
+
+        # --------------------------------------------------------------
+        # Overall score
+        #
+        # None means there was no applicable overall score.
+        # This is semantically different from an actual score of 0.0.
+        # --------------------------------------------------------------
+
+        overall_score = overall_total / overall_count if overall_count > 0 else None
 
         # --------------------------------------------------------------
         # Deterministic fallback feedback
@@ -182,6 +314,8 @@ class EvaluationRunSummaryService:
         feedback = EvaluationRunSummaryService._build_feedback(
             metrics=metrics,
             completed_results=completed_results,
+            overall_score=overall_score,
+            metric_applicability=metric_applicability_summary,
         )
 
         # --------------------------------------------------------------
@@ -270,6 +404,7 @@ class EvaluationRunSummaryService:
             "model": model_summary,
             "overall_score": overall_score,
             "metrics": metrics,
+            "metric_applicability": metric_applicability_summary,
             "total_results": len(results),
             "completed_cases": len(completed_results),
             "failed_cases": len(failed_results),
@@ -296,7 +431,7 @@ class EvaluationRunSummaryService:
         *,
         model_gateway: ModelGateway,
         evaluation_run_id,
-        overall_score: float,
+        overall_score: float | None,
         metrics: dict[str, float],
         performance: dict[str, Any],
         rolling_feedback: dict[str, Any] | None,
@@ -343,7 +478,7 @@ class EvaluationRunSummaryService:
     def _build_final_feedback_prompt(
         *,
         evaluation_run_id,
-        overall_score: float,
+        overall_score: float | None,
         metrics: dict[str, float],
         performance: dict[str, Any],
         rolling_feedback: dict[str, Any] | None,
@@ -367,6 +502,8 @@ class EvaluationRunSummaryService:
             indent=2,
         )
 
+        formatted_overall_score = f"{overall_score:.6f}" if overall_score is not None else "N/A"
+
         return f"""
 You are the final qualitative analysis judge for an AI evaluation platform.
 
@@ -386,7 +523,7 @@ Evaluation run:
 {evaluation_run_id}
 
 Overall score:
-{overall_score:.6f}
+{formatted_overall_score}
 
 Metrics:
 {metrics_json}
@@ -399,6 +536,9 @@ Final rolling feedback:
 
 The rolling feedback is already a compressed summary of case-level evaluator
 feedback. Use it as qualitative evidence, but do not blindly copy it.
+
+If the overall score is N/A, explicitly recognize that no applicable overall
+score was available. Do not interpret N/A as zero or poor performance.
 
 Generate ONLY valid JSON with exactly this structure:
 
@@ -433,16 +573,17 @@ Rules:
 2. Treat the supplied overall score as authoritative.
 3. Never invent metric values.
 4. Never recalculate the overall score.
-5. Strengths must contain at least 3 evidence-grounded observations.
-6. Weaknesses must contain at least 3 evidence-grounded observations.
-7. Patterns must contain at least 3 recurring or cross-case observations.
-8. Recommendations must contain at least 3 actionable recommendations.
-9. Consider performance information such as completion and failure counts
-   when it provides meaningful evidence.
-10. Do not manufacture praise or criticism unsupported by the supplied evidence.
-11. When evidence is limited, make conservative evidence-based observations.
-12. evaluator_feedback may remain an empty list.
-13. Return JSON only.
+5. Treat N/A as unavailable applicability, not as a zero score.
+6. Strengths must contain at least 3 evidence-grounded observations.
+7. Weaknesses must contain at least 3 evidence-grounded observations.
+8. Patterns must contain at least 3 recurring or cross-case observations.
+9. Recommendations must contain at least 3 actionable recommendations.
+10. Consider performance information such as completion and failure counts
+    when it provides meaningful evidence.
+11. Do not manufacture praise or criticism unsupported by the supplied evidence.
+12. When evidence is limited, make conservative evidence-based observations.
+13. evaluator_feedback may remain an empty list.
+14. Return JSON only.
 """.strip()
 
     @staticmethod
@@ -483,12 +624,13 @@ Rules:
     @staticmethod
     def _build_final_fallback_feedback(
         *,
-        overall_score: float,
+        overall_score: float | None,
         metrics: dict[str, float],
         performance: dict[str, Any],
         completed_cases: int,
         failed_cases: int,
         rolling_feedback: dict[str, Any] | None,
+        metric_applicability: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """
         Build a schema-valid final feedback object when final LLM
@@ -541,8 +683,34 @@ Rules:
                     "evaluation metrics for comparison."
                 )
             )
+        elif metric_applicability:
+            strengths.append(
+                (
+                    "The evaluation recorded metric applicability information "
+                    "even though no numeric metric score was available."
+                )
+            )
         else:
-            strengths.append("The evaluation run produced a recorded overall score.")
+            strengths.append("The evaluation run produced persisted execution evidence.")
+
+        # --------------------------------------------------------------
+        # Applicability observations
+        # --------------------------------------------------------------
+
+        if metric_applicability:
+            na_metrics = [
+                metric_name
+                for metric_name, statistics in metric_applicability.items()
+                if statistics.get("not_applicable", 0) > 0
+            ]
+
+            if na_metrics:
+                patterns.append(
+                    (
+                        "Some evaluation metrics were not applicable to "
+                        f"all cases: {', '.join(sorted(na_metrics))}."
+                    )
+                )
 
         # --------------------------------------------------------------
         # Weaknesses
@@ -582,9 +750,11 @@ Rules:
                     "performance across metrics."
                 )
             )
+        elif overall_score is None:
+            weaknesses.append("No applicable overall score was available for this run.")
         else:
             weaknesses.append(
-                ("Only limited cross-metric variation is available for comparison in this run.")
+                "Only limited cross-metric variation is available for comparison in this run."
             )
 
         # --------------------------------------------------------------
@@ -651,6 +821,11 @@ Rules:
                     f"the lowest measured metric at {weakest_score:.4f}."
                 )
             )
+        elif overall_score is None:
+            recommendations.append(
+                "Increase metric applicability coverage so future runs "
+                "produce broader quantitative evidence."
+            )
         else:
             recommendations.append("Continue collecting evaluation metrics across future runs.")
 
@@ -671,9 +846,16 @@ Rules:
                     "to determine whether the weakest dimensions improve."
                 )
             )
+        elif metric_applicability:
+            recommendations.append(
+                (
+                    "Review metric applicability coverage and add complementary "
+                    "metrics where appropriate."
+                )
+            )
         else:
             recommendations.append(
-                ("Add complementary evaluation metrics to obtain broader quality coverage.")
+                "Add complementary evaluation metrics to obtain broader quality coverage."
             )
 
         # --------------------------------------------------------------
@@ -727,7 +909,13 @@ Rules:
         # Overall assessment
         # --------------------------------------------------------------
 
-        if overall_score >= 0.8:
+        if overall_score is None:
+            overall = (
+                "No applicable overall evaluation score was available for "
+                "this run. Metric applicability should be considered when "
+                "interpreting the evaluation evidence."
+            )
+        elif overall_score >= 0.8:
             overall = (
                 f"Strong overall evaluation performance with an overall "
                 f"score of {overall_score:.4f}."
@@ -764,6 +952,8 @@ Rules:
     def _build_feedback(
         metrics: dict[str, float],
         completed_results: list[EvaluationResult],
+        overall_score: float | None = None,
+        metric_applicability: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         strengths: list[str] = []
         weaknesses: list[str] = []
@@ -885,12 +1075,50 @@ Rules:
                     "clarity, relevance, and grounding."
                 )
 
-        if metrics:
-            overall_score = sum(metrics.values()) / len(metrics)
-        else:
-            overall_score = 0.0
+        # --------------------------------------------------------------
+        # Applicability observations
+        # --------------------------------------------------------------
 
-        if overall_score >= 0.8:
+        if metric_applicability:
+            not_applicable_metrics = [
+                (
+                    metric_name,
+                    statistics.get("not_applicable", 0),
+                    statistics.get("total", 0),
+                )
+                for metric_name, statistics in metric_applicability.items()
+                if statistics.get("not_applicable", 0) > 0
+            ]
+
+            if not_applicable_metrics:
+                for (
+                    metric_name,
+                    not_applicable_count,
+                    total,
+                ) in not_applicable_metrics:
+                    coverage = metric_applicability[metric_name].get(
+                        "coverage",
+                        0.0,
+                    )
+
+                    patterns.append(
+                        (
+                            f"{metric_name} was not applicable to "
+                            f"{not_applicable_count} of {total} case(s), "
+                            f"with {coverage:.2%} applicability coverage."
+                        )
+                    )
+
+        # --------------------------------------------------------------
+        # Overall assessment
+        #
+        # Use the authoritative score supplied by calculate().
+        # Never recompute it from metric averages here.
+        # --------------------------------------------------------------
+
+        if overall_score is None:
+            overall = "No applicable overall evaluation score was available for this run."
+        elif overall_score >= 0.8:
             overall = "Strong overall evaluation performance."
         elif overall_score >= 0.6:
             overall = "Moderate overall evaluation performance with some areas for improvement."
@@ -907,7 +1135,13 @@ Rules:
         # --------------------------------------------------------------
 
         if not strengths:
-            strengths.append("The evaluation produced measurable metric results.")
+            if overall_score is None:
+                strengths.append(
+                    "The evaluation recorded execution evidence even though "
+                    "no applicable overall score was available."
+                )
+            else:
+                strengths.append("The evaluation produced measurable metric results.")
 
         if not weaknesses:
             weaknesses.append(

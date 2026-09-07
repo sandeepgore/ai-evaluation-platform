@@ -1,6 +1,5 @@
 from uuid import UUID
 
-from app.schemas.evaluation.summary import EvaluationRunSummaryResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,22 +11,23 @@ from app.schemas.evaluation import (
     EvaluationRunResponse,
     EvaluationRunUpdate,
 )
+from app.schemas.evaluation.summary import EvaluationRunSummaryResponse
 from app.services.evaluation import EvaluationRunService
+from app.services.evaluation.run_validation import EvaluationRunValidationError
 from app.services.evaluation_engine.cache import EvaluationSummaryCache
 from app.services.evaluation_engine.engine import EvaluationEngine
-
 from app.services.evaluation_engine.scoring_config import (
     ScoringConfigurationService,
 )
 from app.services.evaluation_engine.summary import EvaluationRunSummaryService
+from app.services.evaluation_engine.summary_persistence import (
+    EvaluationSummaryPersistenceService,
+)
 from app.services.evaluators import create_default_registry
 from app.services.evaluators.applicability import (
     EvaluatorApplicabilityService,
 )
 from app.services.scoring import ScoringService
-from app.services.evaluation_engine.summary_persistence import (
-    EvaluationSummaryPersistenceService,
-)
 
 router = APIRouter(
     prefix="/evaluation-runs",
@@ -46,11 +46,16 @@ async def create_evaluation_run(
 ):
     try:
         return await EvaluationRunService.create(db, data)
+    except EvaluationRunValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
-        )
+        ) from exc
 
 
 @router.get(
@@ -163,9 +168,11 @@ async def get_evaluation_run_summary(
 
     if persisted_summary is not None:
         summary = {
-            "model": persisted_summary.metadata.get("model")
-            if isinstance(persisted_summary.metadata, dict)
-            else None,
+            "model": (
+                persisted_summary.metadata.get("model")
+                if isinstance(persisted_summary.metadata, dict)
+                else None
+            ),
             "overall_score": persisted_summary.overall_score,
             "metrics": persisted_summary.metrics,
             "feedback": persisted_summary.feedback,

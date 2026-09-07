@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from app.services.evaluation.data_policy import (
-    DataPolicy,
     DataPolicyDecision,
     DataPolicyEvaluator,
 )
 from app.services.evaluation.dataset_capability import (
     DatasetCapabilities,
 )
+from app.shared.enums import DataPolicy
 
 
 class DataRequirement(StrEnum):

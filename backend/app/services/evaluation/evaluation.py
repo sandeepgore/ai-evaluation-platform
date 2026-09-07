@@ -7,6 +7,10 @@ from app.models.dataset_version import DatasetVersion
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
 from app.models.model import Model
 from app.schemas.evaluation import EvaluationRunCreate, EvaluationRunUpdate
+from app.services.evaluation.run_validation import (
+    EvaluationRunValidationService,
+)
+from app.services.evaluators import create_default_registry
 
 
 class EvaluationRunService:
@@ -19,19 +23,19 @@ class EvaluationRunService:
         Validate whether an evaluation run can transition
         from the current status to the new status.
 
-        Terminal states:
-            COMPLETED
-            FAILED
-            CANCELLED
+            Terminal states:
+                COMPLETED
+                FAILED
+                CANCELLED
 
-        Valid transitions:
-            PENDING   -> RUNNING
-            PENDING   -> CANCELLED
-            RUNNING   -> COMPLETED
-            RUNNING   -> FAILED
-            RUNNING   -> CANCELLED
+            Valid transitions:
+                PENDING   -> RUNNING
+                PENDING   -> CANCELLED
+                RUNNING   -> COMPLETED
+                RUNNING   -> FAILED
+                RUNNING   -> CANCELLED
 
-        Re-applying the same status is allowed.
+            Re-applying the same status is allowed.
         """
 
         if current_status == new_status:
@@ -70,30 +74,56 @@ class EvaluationRunService:
         db: AsyncSession,
         data: EvaluationRunCreate,
     ) -> EvaluationRun:
+        # --------------------------------------------------------------
         # Verify dataset version exists
+        # --------------------------------------------------------------
+
         dataset_version_result = await db.execute(
             select(DatasetVersion).where(DatasetVersion.id == data.dataset_version_id)
         )
+
         dataset_version = dataset_version_result.scalar_one_or_none()
 
         if dataset_version is None:
             raise ValueError("Dataset version not found")
 
+        # --------------------------------------------------------------
         # Verify model exists
+        # --------------------------------------------------------------
+
         model_result = await db.execute(select(Model).where(Model.id == data.model_id))
+
         model = model_result.scalar_one_or_none()
 
         if model is None:
             raise ValueError("Model not found")
+
+        # --------------------------------------------------------------
+        # Validate evaluation run before creation
+        # --------------------------------------------------------------
+
+        evaluator_registry = create_default_registry()
+
+        validation_service = EvaluationRunValidationService(
+            evaluator_registry,
+        )
+
+        await validation_service.validate(
+            db=db,
+            dataset_version_id=data.dataset_version_id,
+            evaluation_type=data.evaluation_type.value,
+            configuration=data.configuration or {},
+        )
+
+        # --------------------------------------------------------------
+        # Create evaluation run
+        # --------------------------------------------------------------
 
         evaluation_run = EvaluationRun(
             dataset_version_id=data.dataset_version_id,
             model_id=data.model_id,
             name=data.name,
             status=EvaluationRunStatus.PENDING,
-            # ----------------------------------------------------------
-            # Evaluation type
-            # ----------------------------------------------------------
             evaluation_type=data.evaluation_type,
             configuration=data.configuration,
             total_cases=dataset_version.case_count,
@@ -103,6 +133,7 @@ class EvaluationRunService:
         )
 
         db.add(evaluation_run)
+
         await db.commit()
         await db.refresh(evaluation_run)
 
@@ -143,7 +174,9 @@ class EvaluationRunService:
         run: EvaluationRun,
         data: EvaluationRunUpdate,
     ) -> EvaluationRun:
-        update_data = data.model_dump(exclude_unset=True)
+        update_data = data.model_dump(
+            exclude_unset=True,
+        )
 
         if "status" in update_data:
             EvaluationRunService.validate_status_transition(

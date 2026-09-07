@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.services.evaluation.data_policy import DataPolicy
+from app.shared.enums import DataPolicy
 from app.services.evaluation.dataset_capability import DatasetCapabilities
 from app.services.evaluation.evaluation_data_requirements import (
     DataRequirement,

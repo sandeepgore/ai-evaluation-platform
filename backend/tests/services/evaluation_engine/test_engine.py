@@ -7,6 +7,8 @@ from fastapi import HTTPException
 
 from app.models.evaluation import EvaluationRunStatus
 from app.models.evaluation.evaluation_type import EvaluationType
+from app.services.evaluation.dataset_capability import DatasetCapabilities
+from app.services.evaluation_engine import engine as engine_module
 from app.services.evaluation_engine.engine import EvaluationEngine
 from app.services.evaluators.base import (
     EvaluationScore,
@@ -76,6 +78,49 @@ class FakeLLMJudgeEvaluator(FakeEvaluator):
         )
 
 
+class FakeContextEvaluator:
+    def __init__(
+        self,
+        name: str,
+        score: float,
+    ):
+        self._name = name
+        self._score = score
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def metadata(self) -> EvaluatorMetadata:
+        return EvaluatorMetadata(
+            category="rag",
+            description=f"Fake context evaluator for {self._name}.",
+            required_inputs=[
+                "actual_output",
+                "context",
+            ],
+            requires_reference=False,
+            requires_context=True,
+            requires_llm=False,
+            applicable_to=["rag"],
+            tags=[],
+        )
+
+    async def evaluate(
+        self,
+        *,
+        expected_output,
+        actual_output,
+        context=None,
+    ):
+        return EvaluationScore(
+            metric=self._name,
+            score=self._score,
+            feedback=f"{self._name} evaluated.",
+        )
+
+
 class FakeRegistry:
     def __init__(self):
         self.evaluators = {
@@ -118,12 +163,69 @@ def create_model():
 
 def create_case(
     input_text: str,
-    expected_output: str,
+    expected_output: str | None,
+    *,
+    has_reference: bool = True,
+    has_context: bool = False,
 ):
     return SimpleNamespace(
         id=uuid4(),
         input=input_text,
         expected_output=expected_output,
+        has_reference=has_reference,
+        has_context=has_context,
+    )
+
+
+def capabilities_from_cases(cases) -> DatasetCapabilities:
+    """
+    Build dataset-level capabilities from the test cases.
+
+    Engine tests use this helper instead of depending on the fake
+    SQLAlchemy result returned by the model lookup.
+    """
+    total_cases = len(cases)
+
+    cases_with_reference = sum(1 for case in cases if case.has_reference)
+
+    cases_with_context = sum(1 for case in cases if case.has_context)
+
+    reference_coverage = cases_with_reference / total_cases if total_cases else 0.0
+
+    context_coverage = cases_with_context / total_cases if total_cases else 0.0
+
+    return DatasetCapabilities(
+        total_cases=total_cases,
+        cases_with_reference=cases_with_reference,
+        cases_without_reference=(total_cases - cases_with_reference),
+        cases_with_context=cases_with_context,
+        cases_without_context=(total_cases - cases_with_context),
+        has_reference=cases_with_reference > 0,
+        has_context=cases_with_context > 0,
+        all_cases_have_reference=(total_cases > 0 and cases_with_reference == total_cases),
+        all_cases_have_context=(total_cases > 0 and cases_with_context == total_cases),
+        reference_coverage=reference_coverage,
+        context_coverage=context_coverage,
+    )
+
+
+def mock_dataset_capabilities(
+    monkeypatch,
+    cases,
+):
+    """
+    Mock dataset-level capability analysis for EvaluationEngine tests.
+
+    DatasetCapabilityService has its own dedicated tests. Engine tests
+    should provide the capabilities explicitly so they do not depend
+    on SQLAlchemy result-shape details.
+    """
+    monkeypatch.setattr(
+        engine_module.DatasetCapabilityService,
+        "analyze_dataset_version",
+        AsyncMock(
+            return_value=capabilities_from_cases(cases),
+        ),
     )
 
 
@@ -216,7 +318,6 @@ def create_engine_mocks(model):
 
 def mock_run_summary_services(
     monkeypatch,
-    engine_module,
     *,
     overall_score=0.75,
 ):
@@ -267,6 +368,8 @@ async def test_engine_executes_evaluation_sequential(monkeypatch):
         "An LLM is a large language model.",
     )
 
+    cases = [case_1, case_2]
+
     run = create_run(
         model_id=model.id,
         dataset_version_id=uuid4(),
@@ -294,11 +397,8 @@ async def test_engine_executes_evaluation_sequential(monkeypatch):
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     mock_run_summary_services(
         monkeypatch,
-        engine_module,
     )
 
     monkeypatch.setattr(
@@ -310,12 +410,12 @@ async def test_engine_executes_evaluation_sequential(monkeypatch):
     monkeypatch.setattr(
         engine_module.DatasetCaseService,
         "list",
-        AsyncMock(
-            return_value=[
-                case_1,
-                case_2,
-            ]
-        ),
+        AsyncMock(return_value=cases),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        cases,
     )
 
     monkeypatch.setattr(
@@ -386,6 +486,8 @@ async def test_engine_executes_evaluation_batch(monkeypatch):
         "An LLM is a large language model.",
     )
 
+    cases = [case_1, case_2]
+
     run = create_run(
         model_id=model.id,
         dataset_version_id=uuid4(),
@@ -414,11 +516,8 @@ async def test_engine_executes_evaluation_batch(monkeypatch):
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     mock_run_summary_services(
         monkeypatch,
-        engine_module,
     )
 
     monkeypatch.setattr(
@@ -430,12 +529,12 @@ async def test_engine_executes_evaluation_batch(monkeypatch):
     monkeypatch.setattr(
         engine_module.DatasetCaseService,
         "list",
-        AsyncMock(
-            return_value=[
-                case_1,
-                case_2,
-            ]
-        ),
+        AsyncMock(return_value=cases),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        cases,
     )
 
     monkeypatch.setattr(
@@ -538,11 +637,8 @@ async def test_engine_batch_respects_batch_size(monkeypatch):
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     mock_run_summary_services(
         monkeypatch,
-        engine_module,
     )
 
     monkeypatch.setattr(
@@ -555,6 +651,11 @@ async def test_engine_batch_respects_batch_size(monkeypatch):
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=cases),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        cases,
     )
 
     monkeypatch.setattr(
@@ -619,11 +720,8 @@ async def test_engine_persists_scores_and_feedback(monkeypatch):
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     mock_run_summary_services(
         monkeypatch,
-        engine_module,
     )
 
     monkeypatch.setattr(
@@ -636,6 +734,11 @@ async def test_engine_persists_scores_and_feedback(monkeypatch):
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     evaluation_result_create = AsyncMock(
@@ -668,7 +771,6 @@ async def test_engine_persists_scores_and_feedback(monkeypatch):
     assert saved_result["scores"]["overall"]["score"] == 0.75
 
     assert "exact_match: exact_match evaluated." in saved_result["feedback"]
-
     assert "f1: f1 evaluated." in saved_result["feedback"]
 
 
@@ -683,6 +785,8 @@ async def test_engine_rejects_reference_evaluator_without_reference_before_model
         input="What is RAG?",
         expected_output=None,
         case_metadata=None,
+        has_reference=False,
+        has_context=False,
     )
 
     run = create_run(
@@ -722,8 +826,6 @@ async def test_engine_rejects_reference_evaluator_without_reference_before_model
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     monkeypatch.setattr(
         engine_module.EvaluationRunService,
         "get_by_id",
@@ -734,6 +836,11 @@ async def test_engine_rejects_reference_evaluator_without_reference_before_model
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     evaluation_result_create = AsyncMock()
@@ -769,6 +876,8 @@ async def test_engine_rejects_context_evaluator_without_context_before_model_exe
         input="What is RAG?",
         expected_output="RAG combines retrieval and generation.",
         case_metadata=None,
+        has_reference=True,
+        has_context=False,
     )
 
     run = create_run(
@@ -809,8 +918,6 @@ async def test_engine_rejects_context_evaluator_without_context_before_model_exe
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     monkeypatch.setattr(
         engine_module.EvaluationRunService,
         "get_by_id",
@@ -821,6 +928,11 @@ async def test_engine_rejects_context_evaluator_without_context_before_model_exe
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     evaluation_result_create = AsyncMock()
@@ -894,8 +1006,6 @@ async def test_engine_rejects_llm_evaluator_without_llm_before_model_execution(
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     monkeypatch.setattr(
         engine_module.EvaluationRunService,
         "get_by_id",
@@ -906,6 +1016,11 @@ async def test_engine_rejects_llm_evaluator_without_llm_before_model_execution(
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     evaluation_result_create = AsyncMock()
@@ -982,11 +1097,8 @@ async def test_engine_accepts_llm_evaluator_when_llm_is_available(
         scoring_service=scoring_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     mock_run_summary_services(
         monkeypatch,
-        engine_module,
     )
 
     monkeypatch.setattr(
@@ -999,6 +1111,11 @@ async def test_engine_accepts_llm_evaluator_when_llm_is_available(
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     evaluation_result_create = AsyncMock(
@@ -1081,8 +1198,6 @@ async def test_engine_rejects_invalid_llm_available_configuration(
         scoring_service=MagicMock(),
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     monkeypatch.setattr(
         engine_module.EvaluationRunService,
         "get_by_id",
@@ -1093,6 +1208,11 @@ async def test_engine_rejects_invalid_llm_available_configuration(
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     evaluation_result_create = AsyncMock()
@@ -1165,10 +1285,6 @@ async def test_evaluate_case_sends_persisted_feedback_to_aggregation_service():
         id=uuid4(),
         feedback="exact_match: Response matches the reference.",
     )
-
-    from app.services.evaluation_engine import engine as engine_module
-
-    from unittest.mock import patch
 
     with patch.object(
         engine_module.EvaluationResultService,
@@ -1245,8 +1361,6 @@ async def test_evaluate_case_does_not_send_empty_feedback_to_aggregation_service
         feedback=None,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     with patch.object(
         engine_module.EvaluationResultService,
         "create",
@@ -1316,8 +1430,6 @@ async def test_evaluate_case_succeeds_without_aggregation_service():
         feedback="exact_match: Response matches the reference.",
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     with patch.object(
         engine_module.EvaluationResultService,
         "create",
@@ -1368,7 +1480,6 @@ async def test_evaluate_case_aggregation_failure_does_not_fail_case():
     )
 
     aggregation_service = AsyncMock()
-
     aggregation_service.accept.side_effect = RuntimeError("Reducer temporarily unavailable")
 
     engine = EvaluationEngine(
@@ -1388,8 +1499,6 @@ async def test_evaluate_case_aggregation_failure_does_not_fail_case():
         id=uuid4(),
         feedback="exact_match: Response matches the reference.",
     )
-
-    from app.services.evaluation_engine import engine as engine_module
 
     with patch.object(
         engine_module.EvaluationResultService,
@@ -1482,8 +1591,6 @@ async def test_engine_finalizes_rolling_feedback_and_persists_summary(
         feedback_aggregation_service=aggregation_service,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     monkeypatch.setattr(
         engine_module.EvaluationRunService,
         "get_by_id",
@@ -1494,6 +1601,11 @@ async def test_engine_finalizes_rolling_feedback_and_persists_summary(
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
     )
 
     persisted_result = SimpleNamespace(
@@ -1617,6 +1729,7 @@ async def test_engine_finalizes_rolling_feedback_and_persists_summary(
     }
 
     feedback = summary_payload["feedback"]
+
     assert len(feedback["strengths"]) >= 3
     assert len(feedback["weaknesses"]) >= 3
     assert len(feedback["patterns"]) >= 3
@@ -1661,8 +1774,6 @@ async def test_engine_persists_deterministic_feedback_without_rolling_reducer(
         feedback_aggregation_service=None,
     )
 
-    from app.services.evaluation_engine import engine as engine_module
-
     monkeypatch.setattr(
         engine_module.EvaluationRunService,
         "get_by_id",
@@ -1675,6 +1786,11 @@ async def test_engine_persists_deterministic_feedback_without_rolling_reducer(
         AsyncMock(return_value=[case]),
     )
 
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
+    )
+
     monkeypatch.setattr(
         engine_module.EvaluationResultService,
         "create",
@@ -1685,6 +1801,7 @@ async def test_engine_persists_deterministic_feedback_without_rolling_reducer(
             )
         ),
     )
+
     deterministic_feedback = {
         "overall": "Moderate overall performance.",
         "strengths": [
@@ -1709,6 +1826,7 @@ async def test_engine_persists_deterministic_feedback_without_rolling_reducer(
         ],
         "evaluator_feedback": [],
     }
+
     deterministic_summary = {
         "overall_score": 0.75,
         "metrics": {
@@ -1759,9 +1877,395 @@ async def test_engine_persists_deterministic_feedback_without_rolling_reducer(
     summary_payload = summary_save.await_args.args[2]
 
     feedback = summary_payload["feedback"]
+
     assert len(feedback["strengths"]) >= 3
     assert len(feedback["weaknesses"]) >= 3
     assert len(feedback["patterns"]) >= 3
     assert len(feedback["recommendations"]) >= 3
 
     assert result.status == EvaluationRunStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_evaluate_case_marks_reference_metric_not_applicable_when_reference_is_missing():
+    run = create_run(
+        model_id=uuid4(),
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    case = create_case(
+        "What is RAG?",
+        None,
+        has_reference=False,
+        has_context=False,
+    )
+
+    response = create_response("RAG combines retrieval and generation.")
+
+    evaluator = MagicMock()
+    evaluator.name = "exact_match"
+
+    evaluator.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
+
+    evaluator.evaluate = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=AsyncMock(),
+        model_gateway=None,
+        evaluator_registry=MagicMock(),
+        scoring_service=MagicMock(),
+    )
+
+    engine.scoring_service.calculate.return_value = SimpleNamespace(
+        score=1.0,
+        metadata={},
+    )
+
+    persisted_result = SimpleNamespace(
+        id=uuid4(),
+        feedback=None,
+    )
+
+    with patch.object(
+        engine_module.EvaluationResultService,
+        "create",
+        new=AsyncMock(return_value=persisted_result),
+    ) as evaluation_result_create:
+        await engine._evaluate_case(
+            run=run,
+            case=case,
+            response=response,
+            evaluator_configs=[
+                (evaluator, 1.0),
+            ],
+            scoring_configuration={},
+        )
+
+    saved_result = evaluation_result_create.call_args.kwargs
+
+    exact_match = saved_result["scores"]["exact_match"]
+
+    assert exact_match["status"] == "not_applicable"
+    assert exact_match["score"] is None
+    assert exact_match["metadata"]["missing_requirements"] == ["reference"]
+
+    evaluator.evaluate.assert_not_awaited()
+
+    assert saved_result["scores"]["overall"]["status"] == "not_applicable"
+    assert saved_result["scores"]["overall"]["score"] is None
+
+    engine.scoring_service.calculate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_case_marks_context_metric_not_applicable_when_context_is_missing():
+    run = create_run(
+        model_id=uuid4(),
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.RAG,
+        execution_mode="sequential",
+    )
+
+    case = create_case(
+        "What is RAG?",
+        None,
+        has_reference=False,
+        has_context=False,
+    )
+
+    response = create_response("RAG combines retrieval and generation.")
+
+    evaluator = MagicMock()
+    evaluator.name = "faithfulness"
+
+    evaluator.metadata = EvaluatorMetadata(
+        category="rag",
+        description="Context-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "context",
+        ],
+        requires_reference=False,
+        requires_context=True,
+        requires_llm=False,
+        applicable_to=["rag"],
+        tags=[],
+    )
+
+    evaluator.evaluate = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=AsyncMock(),
+        model_gateway=None,
+        evaluator_registry=MagicMock(),
+        scoring_service=MagicMock(),
+    )
+
+    persisted_result = SimpleNamespace(
+        id=uuid4(),
+        feedback=None,
+    )
+
+    with patch.object(
+        engine_module.EvaluationResultService,
+        "create",
+        new=AsyncMock(return_value=persisted_result),
+    ) as evaluation_result_create:
+        await engine._evaluate_case(
+            run=run,
+            case=case,
+            response=response,
+            evaluator_configs=[
+                (evaluator, 1.0),
+            ],
+            scoring_configuration={},
+        )
+
+    saved_result = evaluation_result_create.call_args.kwargs
+
+    faithfulness = saved_result["scores"]["faithfulness"]
+
+    assert faithfulness["status"] == "not_applicable"
+    assert faithfulness["score"] is None
+    assert faithfulness["metadata"]["missing_requirements"] == ["context"]
+
+    evaluator.evaluate.assert_not_awaited()
+
+    assert saved_result["scores"]["overall"]["status"] == "not_applicable"
+    assert saved_result["scores"]["overall"]["score"] is None
+
+    engine.scoring_service.calculate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_case_scores_only_applicable_metrics():
+    run = create_run(
+        model_id=uuid4(),
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    case = create_case(
+        "What is RAG?",
+        None,
+        has_reference=False,
+        has_context=True,
+    )
+
+    response = create_response("RAG combines retrieval and generation.")
+
+    reference_evaluator = MagicMock()
+    reference_evaluator.name = "exact_match"
+
+    reference_evaluator.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
+
+    reference_evaluator.evaluate = AsyncMock()
+
+    context_evaluator = FakeContextEvaluator(
+        "faithfulness",
+        0.8,
+    )
+
+    scoring_service = MagicMock()
+
+    scoring_service.calculate.return_value = SimpleNamespace(
+        score=0.8,
+        metadata={
+            "strategy": "weighted",
+            "weights": {
+                "faithfulness": 1.0,
+            },
+        },
+    )
+
+    engine = EvaluationEngine(
+        db=AsyncMock(),
+        model_gateway=None,
+        evaluator_registry=MagicMock(),
+        scoring_service=scoring_service,
+    )
+
+    persisted_result = SimpleNamespace(
+        id=uuid4(),
+        feedback="faithfulness: faithfulness evaluated.",
+    )
+
+    with patch.object(
+        engine_module.EvaluationResultService,
+        "create",
+        new=AsyncMock(return_value=persisted_result),
+    ) as evaluation_result_create:
+        await engine._evaluate_case(
+            run=run,
+            case=case,
+            response=response,
+            evaluator_configs=[
+                (reference_evaluator, 0.5),
+                (context_evaluator, 0.5),
+            ],
+            scoring_configuration={
+                "weights": {
+                    "exact_match": 0.5,
+                    "faithfulness": 0.5,
+                }
+            },
+        )
+
+    saved_result = evaluation_result_create.call_args.kwargs
+
+    assert saved_result["scores"]["exact_match"]["status"] == ("not_applicable")
+    assert saved_result["scores"]["exact_match"]["score"] is None
+
+    assert saved_result["scores"]["faithfulness"]["status"] == ("completed")
+    assert saved_result["scores"]["faithfulness"]["score"] == 0.8
+
+    assert saved_result["scores"]["overall"]["status"] == "completed"
+    assert saved_result["scores"]["overall"]["score"] == 0.8
+
+    reference_evaluator.evaluate.assert_not_awaited()
+    assert scoring_service.calculate.call_count == 1
+
+    scoring_call = scoring_service.calculate.call_args.kwargs
+
+    assert scoring_call["scores"] == {
+        "faithfulness": {
+            "score": 0.8,
+            "status": "completed",
+            "metadata": {},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_evaluate_case_returns_no_overall_score_when_all_metrics_are_not_applicable():
+    run = create_run(
+        model_id=uuid4(),
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    case = create_case(
+        "What is RAG?",
+        None,
+        has_reference=False,
+        has_context=False,
+    )
+
+    response = create_response("RAG combines retrieval and generation.")
+
+    exact_match = MagicMock()
+    exact_match.name = "exact_match"
+
+    exact_match.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
+
+    exact_match.evaluate = AsyncMock()
+
+    f1 = MagicMock()
+    f1.name = "f1"
+
+    f1.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
+
+    f1.evaluate = AsyncMock()
+
+    scoring_service = MagicMock()
+
+    engine = EvaluationEngine(
+        db=AsyncMock(),
+        model_gateway=None,
+        evaluator_registry=MagicMock(),
+        scoring_service=scoring_service,
+    )
+
+    persisted_result = SimpleNamespace(
+        id=uuid4(),
+        feedback=None,
+    )
+
+    with patch.object(
+        engine_module.EvaluationResultService,
+        "create",
+        new=AsyncMock(return_value=persisted_result),
+    ) as evaluation_result_create:
+        await engine._evaluate_case(
+            run=run,
+            case=case,
+            response=response,
+            evaluator_configs=[
+                (exact_match, 0.5),
+                (f1, 0.5),
+            ],
+            scoring_configuration={
+                "weights": {
+                    "exact_match": 0.5,
+                    "f1": 0.5,
+                }
+            },
+        )
+
+    saved_result = evaluation_result_create.call_args.kwargs
+
+    assert saved_result["scores"]["exact_match"]["status"] == ("not_applicable")
+    assert saved_result["scores"]["exact_match"]["score"] is None
+
+    assert saved_result["scores"]["f1"]["status"] == "not_applicable"
+    assert saved_result["scores"]["f1"]["score"] is None
+
+    assert saved_result["scores"]["overall"]["status"] == "not_applicable"
+    assert saved_result["scores"]["overall"]["score"] is None
+
+    exact_match.evaluate.assert_not_awaited()
+    f1.evaluate.assert_not_awaited()
+
+    scoring_service.calculate.assert_not_called()
