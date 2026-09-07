@@ -61,6 +61,8 @@ def test_rag_default_rules_exist():
         "f1",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
     ]
 
 
@@ -183,6 +185,8 @@ def test_rag_with_full_reference_and_context_selects_all_defaults():
         "f1",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
     ]
 
 
@@ -201,6 +205,55 @@ def test_rag_with_missing_context_excludes_context_evaluators():
         "exact_match",
         "f1",
     ]
+
+
+def test_rag_without_reference_excludes_reference_dependent_evaluators():
+    capabilities = make_capabilities(
+        reference_coverage=0.0,
+        context_coverage=1.0,
+    )
+
+    evaluators = DefaultEvaluationResolver.resolve(
+        "rag",
+        capabilities,
+        policy=DataPolicy.PARTIAL,
+    )
+
+    assert evaluators == [
+        "relevance",
+        "faithfulness",
+    ]
+
+
+def test_rag_with_context_only_excludes_context_recall_and_precision():
+    capabilities = make_capabilities(
+        reference_coverage=0.0,
+        context_coverage=1.0,
+    )
+
+    evaluators = DefaultEvaluationResolver.resolve(
+        "rag",
+        capabilities,
+        policy=DataPolicy.PARTIAL,
+    )
+
+    assert "context_recall" not in evaluators
+    assert "context_precision" not in evaluators
+
+
+def test_rag_without_reference_or_context_selects_no_defaults():
+    capabilities = make_capabilities(
+        reference_coverage=0.0,
+        context_coverage=0.0,
+    )
+
+    evaluators = DefaultEvaluationResolver.resolve(
+        "rag",
+        capabilities,
+        policy=DataPolicy.PARTIAL,
+    )
+
+    assert evaluators == []
 
 
 def test_rag_with_partial_context_strict_policy():
@@ -238,6 +291,8 @@ def test_rag_with_partial_context_partial_policy():
         "f1",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
     ]
 
 
@@ -259,6 +314,8 @@ def test_rag_threshold_context():
         "f1",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
     ]
 
 

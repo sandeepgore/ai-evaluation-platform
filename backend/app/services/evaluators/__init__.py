@@ -15,6 +15,8 @@ from app.services.evaluators.applicability import (
     EvaluatorApplicabilityService,
 )
 from app.services.evaluators.llm_judge import LLMJudgeEvaluator
+from app.services.evaluators.context_precision import ContextPrecisionEvaluator
+from app.services.evaluators.context_recall import ContextRecallEvaluator
 
 __all__ = [
     "EvaluationScore",
@@ -26,6 +28,8 @@ __all__ = [
     "ROUGELvaluator",
     "RelevanceEvaluator",
     "FaithfulnessEvaluator",
+    "ContextPrecisionEvaluator",
+    "ContextRecallEvaluator",
     "EvaluatorRegistry",
     "create_default_registry",
     "EvaluationCapabilities",

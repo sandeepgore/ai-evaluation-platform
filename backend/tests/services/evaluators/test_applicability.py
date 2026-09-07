@@ -76,6 +76,115 @@ def test_context_evaluator_is_allowed_with_context(service):
     assert evaluators[0].name == "faithfulness"
 
 
+def test_context_recall_requires_reference_and_context(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="rag",
+        has_reference=True,
+        has_context=True,
+        llm_available=False,
+    )
+
+    evaluators = service.validate(
+        ["context_recall"],
+        capabilities,
+    )
+
+    assert len(evaluators) == 1
+    assert evaluators[0].name == "context_recall"
+
+
+def test_context_precision_requires_reference_and_context(service):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="rag",
+        has_reference=True,
+        has_context=True,
+        llm_available=False,
+    )
+
+    evaluators = service.validate(
+        ["context_precision"],
+        capabilities,
+    )
+
+    assert len(evaluators) == 1
+    assert evaluators[0].name == "context_precision"
+
+
+@pytest.mark.parametrize(
+    "evaluator_name",
+    [
+        "context_recall",
+        "context_precision",
+    ],
+)
+def test_context_metrics_are_rejected_without_reference(
+    service,
+    evaluator_name,
+):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="rag",
+        has_reference=False,
+        has_context=True,
+        llm_available=False,
+    )
+
+    with pytest.raises(ValueError, match="requires a reference"):
+        service.validate(
+            [evaluator_name],
+            capabilities,
+        )
+
+
+@pytest.mark.parametrize(
+    "evaluator_name",
+    [
+        "context_recall",
+        "context_precision",
+    ],
+)
+def test_context_metrics_are_rejected_without_context(
+    service,
+    evaluator_name,
+):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="rag",
+        has_reference=True,
+        has_context=False,
+        llm_available=False,
+    )
+
+    with pytest.raises(ValueError, match="requires evaluation context"):
+        service.validate(
+            [evaluator_name],
+            capabilities,
+        )
+
+
+@pytest.mark.parametrize(
+    "evaluator_name",
+    [
+        "context_recall",
+        "context_precision",
+    ],
+)
+def test_context_metrics_are_rejected_for_text(
+    service,
+    evaluator_name,
+):
+    capabilities = EvaluationCapabilities(
+        evaluation_type="text",
+        has_reference=True,
+        has_context=True,
+        llm_available=False,
+    )
+
+    with pytest.raises(ValueError):
+        service.validate(
+            [evaluator_name],
+            capabilities,
+        )
+
+
 def test_unknown_evaluator_is_rejected(service):
     capabilities = EvaluationCapabilities(
         evaluation_type="text",
@@ -238,6 +347,8 @@ def test_get_applicable_evaluators_returns_reference_and_context_evaluators(serv
         "f1",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
     ]
 
 
