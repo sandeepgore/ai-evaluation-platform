@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.evaluation.data_policy import DataPolicy
+from app.shared.enums import DataPolicy
 from app.services.evaluation.dataset_capability import (
     DatasetCapabilities,
 )

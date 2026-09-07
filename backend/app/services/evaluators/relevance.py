@@ -96,6 +96,7 @@ class RelevanceEvaluator(Evaluator):
             ),
             requires_reference=False,
             requires_context=True,
+            requires_supporting_context=False,
             requires_llm=False,
             applicable_to=("rag",),
             tags=(

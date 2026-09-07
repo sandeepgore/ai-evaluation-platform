@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from app.shared.enums import DataPolicy
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     dataset_insert_batch_size: int = 2_000
     model_gateway_timeout: int = 60
+
+    default_data_policy: DataPolicy = DataPolicy.STRICT
+    default_data_policy_threshold: float = 1.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

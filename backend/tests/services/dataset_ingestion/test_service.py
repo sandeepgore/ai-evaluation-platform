@@ -422,3 +422,74 @@ async def test_import_json_rolls_back_on_unexpected_error():
     db.rollback.assert_awaited_once()
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_import_json_calculates_context_capability():
+    dataset_id = uuid4()
+
+    dataset = MagicMock()
+    dataset.id = dataset_id
+
+    db = build_db(
+        dataset=dataset,
+        next_version=1,
+    )
+
+    payload = DatasetImportPayload(
+        cases=[
+            DatasetImportCase(
+                input="Input 1",
+                metadata={
+                    "context": "Primary context",
+                },
+            ),
+            DatasetImportCase(
+                input="Input 2",
+                metadata={
+                    "retrieved_context": "Retrieved context",
+                },
+            ),
+            DatasetImportCase(
+                input="Input 3",
+                metadata={
+                    "reference_context": [
+                        "Context one",
+                        "Context two",
+                    ],
+                },
+            ),
+            DatasetImportCase(
+                input="Input 4",
+                metadata={
+                    "category": "general",
+                },
+            ),
+        ]
+    )
+
+    service = DatasetImportService(db)
+
+    with patch("app.services.dataset_ingestion.service.insert") as mock_insert:
+        version = await service.import_json(
+            dataset_id,
+            payload,
+        )
+
+    mock_insert.assert_called_once()
+
+    insert_execute_call = db.execute.await_args_list[2]
+    inserted_rows = insert_execute_call.args[1]
+
+    assert len(inserted_rows) == 4
+
+    assert [row["has_context"] for row in inserted_rows] == [
+        True,
+        True,
+        True,
+        False,
+    ]
+
+    assert version.analytics is not None
+    assert version.analytics["context_count"] == 3
+    assert version.analytics["context_coverage"] == 0.75

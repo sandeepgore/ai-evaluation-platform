@@ -1,7 +1,7 @@
+from app.shared.enums import DataPolicy
 import pytest
 
 from app.services.evaluation.data_policy import (
-    DataPolicy,
     DataPolicyEvaluator,
 )
 

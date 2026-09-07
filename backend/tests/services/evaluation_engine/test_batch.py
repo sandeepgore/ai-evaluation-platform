@@ -10,7 +10,10 @@ from app.schemas.model_gateway import ModelResponse
 from app.schemas.model_gateway.batch_response import BatchModelResponse
 from app.services.evaluation_engine import engine as engine_module
 from app.services.evaluation_engine.engine import EvaluationEngine
-from tests.services.evaluation_engine.test_engine import FakeRegistry
+from tests.services.evaluation_engine.test_engine import (
+    FakeRegistry,
+    capabilities_from_cases,
+)
 
 
 def mock_run_summary_services(
@@ -74,6 +77,8 @@ async def test_engine_handles_batch_inference_failure_and_continues(
             id=uuid4(),
             input=f"Question {index}",
             expected_output=f"Answer {index}",
+            has_reference=True,
+            has_context=False,
         )
         for index in range(1, 21)
     ]
@@ -192,6 +197,17 @@ async def test_engine_handles_batch_inference_failure_and_continues(
         AsyncMock(return_value=cases),
     )
 
+    # Dataset-level capabilities are now read from persisted
+    # DatasetVersion.analytics by the production engine.
+    # This mock keeps the batch test focused on batch failure isolation.
+    monkeypatch.setattr(
+        engine_module.DatasetCapabilityService,
+        "analyze_dataset_version",
+        AsyncMock(
+            return_value=capabilities_from_cases(cases),
+        ),
+    )
+
     evaluation_result_create = AsyncMock()
 
     monkeypatch.setattr(
@@ -283,6 +299,8 @@ async def test_engine_isolates_individual_batch_item_failure(
             id=uuid4(),
             input=f"Question {index}",
             expected_output=f"Answer {index}",
+            has_reference=True,
+            has_context=False,
         )
         for index in range(1, 4)
     ]
@@ -384,6 +402,17 @@ async def test_engine_isolates_individual_batch_item_failure(
         engine_module.DatasetCaseService,
         "list",
         AsyncMock(return_value=cases),
+    )
+
+    # Dataset-level capabilities are now read from persisted
+    # DatasetVersion.analytics by the production engine.
+    # This mock keeps the test focused on individual batch-item failure.
+    monkeypatch.setattr(
+        engine_module.DatasetCapabilityService,
+        "analyze_dataset_version",
+        AsyncMock(
+            return_value=capabilities_from_cases(cases),
+        ),
     )
 
     evaluation_result_create = AsyncMock()

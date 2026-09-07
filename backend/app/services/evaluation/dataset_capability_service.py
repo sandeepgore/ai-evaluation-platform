@@ -3,26 +3,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.dataset_case.case import DatasetCase
 from app.models.dataset_version import DatasetVersion
-
-from app.services.evaluation.dataset_capability import (
-    DatasetCapabilities,
-    DatasetCapabilityAnalyzer,
-)
+from app.services.evaluation.dataset_capability import DatasetCapabilities
 
 
 class DatasetCapabilityService:
     """
-    DB-backed service for analyzing the capabilities of a dataset version.
+    DB-backed service for reading the capabilities of a dataset version.
 
-    Responsibilities:
-        - Verify that the dataset version exists.
-        - Load active dataset cases from the database.
-        - Delegate capability analysis to DatasetCapabilityAnalyzer.
+    DatasetVersion.analytics is the persisted source of truth for
+    dataset-level capability aggregates.
 
-    This service owns database access.
-    DatasetCapabilityAnalyzer remains pure business logic.
+    DatasetCase.has_reference and DatasetCase.has_context remain the
+    source of truth for case-level eligibility decisions.
     """
 
     @staticmethod
@@ -31,33 +24,40 @@ class DatasetCapabilityService:
         dataset_version_id: UUID,
     ) -> DatasetCapabilities:
         """
-        Analyze the capabilities of a dataset version using
-        the actual DatasetCase records stored in PostgreSQL.
-
-        Only active dataset cases are considered.
+        Read persisted dataset capability aggregates from PostgreSQL.
         """
 
-        # 1. Verify dataset version exists.
-        version_result = await db.execute(
+        result = await db.execute(
             select(DatasetVersion).where(DatasetVersion.id == dataset_version_id)
         )
 
-        version = version_result.scalar_one_or_none()
+        version = result.scalar_one_or_none()
 
         if version is None:
             raise ValueError(f"Dataset version not found: {dataset_version_id}")
 
-        # 2. Load active dataset cases.
-        cases_result = await db.execute(
-            select(DatasetCase)
-            .where(
-                DatasetCase.dataset_version_id == dataset_version_id,
-                DatasetCase.is_active.is_(True),
-            )
-            .order_by(DatasetCase.position.asc())
+        analytics = version.analytics or {}
+
+        total_cases = int(analytics.get("case_count", 0))
+        cases_with_reference = int(analytics.get("reference_count", 0))
+        cases_with_context = int(analytics.get("context_count", 0))
+
+        cases_without_reference = total_cases - cases_with_reference
+        cases_without_context = total_cases - cases_with_context
+
+        reference_coverage = float(analytics.get("reference_coverage", 0.0))
+        context_coverage = float(analytics.get("context_coverage", 0.0))
+
+        return DatasetCapabilities(
+            total_cases=total_cases,
+            cases_with_reference=cases_with_reference,
+            cases_without_reference=cases_without_reference,
+            cases_with_context=cases_with_context,
+            cases_without_context=cases_without_context,
+            has_reference=cases_with_reference > 0,
+            has_context=cases_with_context > 0,
+            all_cases_have_reference=(total_cases > 0 and cases_with_reference == total_cases),
+            all_cases_have_context=(total_cases > 0 and cases_with_context == total_cases),
+            reference_coverage=reference_coverage,
+            context_coverage=context_coverage,
         )
-
-        cases = list(cases_result.scalars().all())
-
-        # 3. Delegate actual capability analysis.
-        return DatasetCapabilityAnalyzer.analyze(cases)

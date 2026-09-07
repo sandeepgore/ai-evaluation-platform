@@ -13,9 +13,15 @@ from app.schemas.model_gateway.batch_response import BatchModelResponse
 from app.schemas.model_gateway.response import ModelResponse
 from app.services.dataset_case import DatasetCaseService
 from app.services.evaluation import EvaluationRunService
-from app.services.evaluation.dataset_capability import (
-    DatasetCapabilities,
-    DatasetCapabilityAnalyzer,
+from app.services.evaluation.case_eligibility import CaseEligibilityEvaluator
+from app.services.evaluation.dataset_capability import DatasetCapabilities
+from app.services.evaluation.dataset_capability_service import (
+    DatasetCapabilityService,
+)
+from app.services.evaluation.evaluation_defaults import DefaultEvaluationResolver
+from app.services.evaluation.run_validation import (
+    EvaluationRunValidationError,
+    EvaluationRunValidationService,
 )
 from app.services.evaluation_engine.feedback_aggregation import (
     EvaluationFeedbackAggregationService,
@@ -44,12 +50,10 @@ from app.services.model_gateway import (
     ModelGatewayFactory,
 )
 from app.services.scoring import ScoringService
-from app.services.evaluation.evaluation_defaults import DefaultEvaluationResolver
 
 
 class EvaluationEngine:
-    """
-    Orchestrates the execution of an EvaluationRun.
+    """Orchestrates the execution of an EvaluationRun.
 
     Supports two execution modes:
 
@@ -74,6 +78,8 @@ class EvaluationEngine:
     - Resolve evaluator applicability.
     - Resolve dedicated LLM judge configuration.
     - Resolve scoring configuration.
+    - Resolve and enforce the run-level data policy.
+    - Apply case-level evaluator eligibility.
     - Feed case-level evaluator feedback into the rolling reducer.
     - Generate deterministic run-level feedback.
     - Generate optional final LLM qualitative feedback.
@@ -109,6 +115,10 @@ class EvaluationEngine:
 
         self.feedback_aggregation_service = feedback_aggregation_service
 
+        self.run_validation_service = EvaluationRunValidationService(
+            evaluator_registry,
+        )
+
     # ------------------------------------------------------------------
     # Configuration
     # ------------------------------------------------------------------
@@ -117,16 +127,14 @@ class EvaluationEngine:
         self,
         run: EvaluationRun,
     ) -> None:
+        """Validate the optional llm_available configuration field.
+
+        llm_available is a configuration capability declaration and, when
+        explicitly supplied, must be a boolean.
+
+        Actual evaluator LLM availability is determined by resolving the
+        dedicated judge model gateway.
         """
-        Validate the optional llm_available configuration field.
-
-        llm_available is a configuration capability declaration and,
-        when explicitly supplied, must be a boolean.
-
-        Actual evaluator LLM availability is determined by resolving
-        the dedicated judge model gateway.
-        """
-
         configuration = run.configuration or {}
 
         if "llm_available" not in configuration:
@@ -150,26 +158,34 @@ class EvaluationEngine:
         dataset_capabilities: DatasetCapabilities,
         llm_available: bool = False,
     ) -> EvaluationCapabilities:
-        """
-        Determine the capabilities available to the evaluation run.
-        """
+        """Determine the capabilities available to the evaluation run.
 
+        Run-level capabilities indicate whether a required input exists anywhere
+        in the dataset.
+
+        Individual case availability is handled separately by
+        CaseEligibilityEvaluator.
+        """
         evaluation_type = run.evaluation_type.value
 
-        has_reference = dataset_capabilities.all_cases_have_reference
-        has_context = dataset_capabilities.all_cases_have_context
+        available_inputs = {"actual_output"}
 
-        available_inputs: set[str] = {
-            "actual_output",
-        }
-
-        if has_reference:
+        # A run can use reference-dependent evaluators when the dataset
+        # contains reference data for at least one case. Individual cases
+        # without a reference are handled as not applicable.
+        if dataset_capabilities.has_reference:
             available_inputs.add("expected_output")
 
-        if has_context:
+        # A run can use context-dependent evaluators when the dataset
+        # contains context for at least one case. Individual cases
+        # without context are handled as not applicable.
+        if dataset_capabilities.has_context:
             available_inputs.add("context")
 
-        if not isinstance(llm_available, bool):
+        if not isinstance(
+            llm_available,
+            bool,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="'llm_available' must be a boolean.",
@@ -177,8 +193,8 @@ class EvaluationEngine:
 
         return EvaluationCapabilities(
             evaluation_type=evaluation_type,
-            has_reference=has_reference,
-            has_context=has_context,
+            has_reference=dataset_capabilities.has_reference,
+            has_context=dataset_capabilities.has_context,
             llm_available=llm_available,
             available_inputs=frozenset(available_inputs),
         )
@@ -188,17 +204,22 @@ class EvaluationEngine:
         run: EvaluationRun,
         capabilities: EvaluationCapabilities,
         dataset_capabilities: DatasetCapabilities,
+        *,
+        policy: Any,
+        policy_threshold: float,
     ) -> list[tuple[Evaluator, float]]:
-        """
-        Resolve and validate evaluators configured for the evaluation run.
+        """Resolve and validate evaluators configured for the evaluation run.
 
         Evaluator metadata and applicability rules are delegated to
         EvaluatorApplicabilityService.
 
-        The returned evaluator list preserves configured order and
-        evaluator weights.
-        """
+        The returned evaluator list preserves configured order and evaluator
+        weights.
 
+        For implicit/default evaluators, the effective data policy is passed to
+        DefaultEvaluationResolver so evaluator selection is consistent with
+        the authoritative run-level policy.
+        """
         evaluation_type = run.evaluation_type.value
 
         evaluator_config: list[str | dict[str, Any]]
@@ -216,6 +237,8 @@ class EvaluationEngine:
             evaluator_config = DefaultEvaluationResolver.resolve(
                 evaluation_type,
                 dataset_capabilities,
+                policy=policy,
+                threshold=policy_threshold,
             )
 
         if not isinstance(
@@ -236,11 +259,17 @@ class EvaluationEngine:
         parsed_configurations: list[tuple[str, float]] = []
 
         for item in evaluator_config:
-            if isinstance(item, str):
+            if isinstance(
+                item,
+                str,
+            ):
                 evaluator_name = item
                 weight = 1.0
 
-            elif isinstance(item, dict):
+            elif isinstance(
+                item,
+                dict,
+            ):
                 evaluator_name = item.get(
                     "name",
                 )
@@ -319,7 +348,7 @@ class EvaluationEngine:
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=("Evaluator validation returned an unexpected result."),
+                detail="Evaluator validation returned an unexpected result.",
             )
 
         evaluators: list[tuple[Evaluator, float]] = []
@@ -345,8 +374,7 @@ class EvaluationEngine:
         self,
         run: EvaluationRun,
     ) -> str:
-        """
-        Resolve the configured execution mode.
+        """Resolve the configured execution mode.
 
         Supported values:
 
@@ -355,7 +383,6 @@ class EvaluationEngine:
 
         Defaults to sequential.
         """
-
         execution_mode = "sequential"
 
         if run.configuration:
@@ -390,12 +417,10 @@ class EvaluationEngine:
         self,
         run: EvaluationRun,
     ) -> int:
-        """
-        Resolve the configured batch size.
+        """Resolve the configured batch size.
 
         Defaults to 10.
         """
-
         batch_size = 10
 
         if run.configuration:
@@ -419,7 +444,7 @@ class EvaluationEngine:
                 if configured_batch_size <= 0:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=("'batch_size' must be greater than zero."),
+                        detail="'batch_size' must be greater than zero.",
                     )
 
                 batch_size = configured_batch_size
@@ -441,8 +466,7 @@ class EvaluationEngine:
         ]
         | None
     ):
-        """
-        Resolve the dedicated LLM judge model gateway.
+        """Resolve the dedicated LLM judge model gateway.
 
         The judge model is configured using:
 
@@ -455,7 +479,6 @@ class EvaluationEngine:
         Raises HTTPException when the configured judge model is invalid,
         missing, inactive, or unsupported.
         """
-
         if not run.configuration:
             return None
 
@@ -512,7 +535,7 @@ class EvaluationEngine:
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(f"Judge model configuration is invalid: {exc}"),
+                detail=f"Judge model configuration is invalid: {exc}",
             ) from exc
 
     def _build_configuration(
@@ -521,13 +544,11 @@ class EvaluationEngine:
         model: Model,
         run: EvaluationRun,
     ) -> dict[str, Any]:
-        """
-        Build the final configuration passed to the model gateway.
+        """Build the final configuration passed to the model gateway.
 
-        Model configuration is loaded first and evaluation-run
-        configuration overrides it.
+        Model configuration is loaded first and evaluation-run configuration
+        overrides it.
         """
-
         configuration: dict[str, Any] = {}
 
         if model.configuration:
@@ -553,10 +574,7 @@ class EvaluationEngine:
 
     @staticmethod
     def _utc_now() -> datetime:
-        """
-        Return the current timezone-aware UTC datetime.
-        """
-
+        """Return the current timezone-aware UTC datetime."""
         return datetime.now(
             timezone.utc,
         )
@@ -566,13 +584,12 @@ class EvaluationEngine:
         started_at: datetime,
         completed_at: datetime,
     ) -> int:
-        """
-        Calculate execution duration in milliseconds.
-        """
-
+        """Calculate execution duration in milliseconds."""
         return max(
             0,
-            int((completed_at - started_at).total_seconds() * 1000),
+            int(
+                (completed_at - started_at).total_seconds() * 1000,
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -588,13 +605,28 @@ class EvaluationEngine:
         evaluator_configs: list[tuple[Evaluator, float]],
         scoring_configuration: dict[str, Any],
     ) -> None:
-        """
-        Evaluate and persist one successful model response.
+        """Evaluate and persist one successful model response.
 
-        The scoring configuration is resolved once per evaluation run
-        and reused for every case.
-        """
+        Case-level evaluator eligibility is evaluated independently for every
+        evaluator.
 
+        A metric that cannot run for a particular case is persisted as:
+
+            {
+                "score": None,
+                "status": "not_applicable",
+                "metadata": {
+                    "missing_requirements": [...],
+                    "reason": "..."
+                }
+            }
+
+        N/A metrics are excluded from weighted scoring.
+
+        If no selected evaluator is applicable to the case, the case overall
+        score is also marked as not applicable rather than treating N/A as
+        zero.
+        """
         scores: dict[
             str,
             dict[str, Any],
@@ -603,6 +635,23 @@ class EvaluationEngine:
         feedback_messages: list[str] = []
 
         for evaluator, _weight in evaluator_configs:
+            eligibility = CaseEligibilityEvaluator.evaluate(
+                case=case,
+                metadata=evaluator.metadata,
+            )
+
+            if not eligibility.eligible:
+                scores[evaluator.name] = {
+                    "score": None,
+                    "status": "not_applicable",
+                    "metadata": {
+                        "missing_requirements": list(eligibility.missing_requirements),
+                        "reason": eligibility.reason,
+                    },
+                }
+
+                continue
+
             evaluation_context: dict[str, Any] = {
                 "input": case.input,
             }
@@ -626,11 +675,23 @@ class EvaluationEngine:
 
             scores[evaluation_score.metric] = {
                 "score": evaluation_score.score,
+                "status": "completed",
                 "metadata": evaluation_score.metadata,
             }
 
             if evaluation_score.feedback:
                 feedback_messages.append(f"{evaluation_score.metric}: {evaluation_score.feedback}")
+
+        # Only completed, numeric metric scores participate in the
+        # weighted calculation. N/A metrics are intentionally excluded.
+        applicable_scores = {
+            metric_name: metric_result
+            for metric_name, metric_result in scores.items()
+            if (
+                metric_result.get("status") == "completed"
+                and metric_result.get("score") is not None
+            )
+        }
 
         case_scoring_configuration = scoring_configuration.copy()
 
@@ -638,15 +699,26 @@ class EvaluationEngine:
             evaluator.name: weight for evaluator, weight in evaluator_configs
         }
 
-        scoring_result = self.scoring_service.calculate(
-            scores=scores,
-            configuration=case_scoring_configuration,
-        )
+        if applicable_scores:
+            scoring_result = self.scoring_service.calculate(
+                scores=applicable_scores,
+                configuration=case_scoring_configuration,
+            )
 
-        scores["overall"] = {
-            "score": scoring_result.score,
-            "metadata": scoring_result.metadata,
-        }
+            scores["overall"] = {
+                "score": scoring_result.score,
+                "status": "completed",
+                "metadata": scoring_result.metadata,
+            }
+
+        else:
+            scores["overall"] = {
+                "score": None,
+                "status": "not_applicable",
+                "metadata": {
+                    "reason": ("No selected evaluator was applicable to this case."),
+                },
+            }
 
         feedback = "\n".join(feedback_messages) if feedback_messages else None
 
@@ -686,11 +758,7 @@ class EvaluationEngine:
         case: Any,
         exc: Exception,
     ) -> None:
-        """
-        Persist a failed evaluation case with a useful diagnostic
-        message.
-        """
-
+        """Persist a failed evaluation case with a useful diagnostic message."""
         error_message = f"{type(exc).__name__}: {str(exc) or repr(exc)}"
 
         await EvaluationResultService.create(
@@ -728,13 +796,11 @@ class EvaluationEngine:
         model_gateway: ModelGateway,
         scoring_configuration: dict[str, Any],
     ) -> None:
-        """
-        Execute cases one at a time.
+        """Execute cases one at a time.
 
-        Database changes are committed once after all cases have been
-        processed instead of committing after every individual case.
+        Database changes are committed once after all cases have been processed
+        instead of committing after every individual case.
         """
-
         configuration = self._build_configuration(
             model=model,
             run=run,
@@ -779,8 +845,7 @@ class EvaluationEngine:
         batch_size: int,
         scoring_configuration: dict[str, Any],
     ) -> None:
-        """
-        Execute cases in batches.
+        """Execute cases in batches.
 
         Per-item errors are isolated to their corresponding case.
 
@@ -788,7 +853,6 @@ class EvaluationEngine:
 
         Execution continues with subsequent batches after failures.
         """
-
         configuration = self._build_configuration(
             model=model,
             run=run,
@@ -918,8 +982,7 @@ class EvaluationEngine:
         self,
         run_id: UUID,
     ) -> EvaluationRun:
-        """
-        Execute all dataset cases belonging to an evaluation run.
+        """Execute all dataset cases belonging to an evaluation run.
 
         High-level lifecycle:
 
@@ -929,33 +992,42 @@ class EvaluationEngine:
             validate configuration
                 |
                 v
-            resolve model / evaluators / scoring configuration
+            resolve model / evaluators / policy / scoring configuration
                 |
                 v
-            RUNNING
+            authoritative data policy gate
                 |
-                v
-            execute cases
-                |
-                v
-            finalize rolling feedback
-                |
-                v
-            calculate persisted scores
-                |
-                v
-            final LLM qualitative synthesis
-                |
-                v
-            persist final summary
-                |
-                v
-            cache final summary
-                |
-                v
-            COMPLETED / FAILED
+             +--+--+
+             |     |
+           reject  allow
+             |     |
+             |     v
+             |   RUNNING
+             |     |
+             |     v
+             |   execute cases
+             |     |
+             |     v
+             |   finalize rolling feedback
+             |     |
+             |     v
+             |   calculate persisted scores
+             |     |
+             |     v
+             |   final LLM qualitative synthesis
+             |     |
+             |     v
+             |   persist final summary
+             |     |
+             |     v
+             |   cache final summary
+             |     |
+             |     v
+             |   COMPLETED
+             |
+             v
+           HTTP 400
         """
-
         run = await EvaluationRunService.get_by_id(
             self.db,
             run_id,
@@ -1062,7 +1134,10 @@ class EvaluationEngine:
                         )
                     )
 
-            except (ValueError, KeyError):
+            except (
+                ValueError,
+                KeyError,
+            ):
                 try:
                     self.evaluator_registry.register(
                         LLMJudgeEvaluator(
@@ -1115,17 +1190,13 @@ class EvaluationEngine:
                 reducer=feedback_reducer,
             )
 
-        cases = await DatasetCaseService.list(
+        # DatasetVersion.analytics is the persisted source of truth for
+        # aggregate dataset capability coverage. It is intentionally
+        # read before loading every case because run-level policy
+        # validation does not require a case scan.
+        dataset_capabilities = await DatasetCapabilityService.analyze_dataset_version(
             self.db,
             run.dataset_version_id,
-        )
-
-        run.total_cases = len(cases)
-        run.completed_cases = 0
-        run.failed_cases = 0
-
-        dataset_capabilities = DatasetCapabilityAnalyzer.analyze(
-            cases,
         )
 
         evaluation_capabilities = self._get_evaluation_capabilities(
@@ -1134,11 +1205,69 @@ class EvaluationEngine:
             llm_available=(judge_model_gateway is not None),
         )
 
+        # Resolve the effective policy before default evaluators.
+        #
+        # This is important because default evaluator selection itself
+        # depends on the configured data policy. For example, a STRICT
+        # policy must not select reference-dependent evaluators when
+        # reference coverage is only partial.
+        try:
+            policy_configuration = self.run_validation_service.resolve_data_policy(
+                run.configuration or {},
+            )
+
+            policy = policy_configuration.policy
+            policy_threshold = policy_configuration.threshold
+
+        except EvaluationRunValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=exc.detail,
+            ) from exc
+
+        # Resolve evaluators after resolving the policy so default
+        # evaluator selection and create-time validation use the same
+        # policy semantics.
         evaluator_configs = self._get_evaluators(
             run,
             evaluation_capabilities,
             dataset_capabilities,
+            policy=policy,
+            policy_threshold=policy_threshold,
         )
+
+        # Authoritative run-level data-policy gate.
+        #
+        # This uses DatasetVersion.analytics for aggregate coverage.
+        # It does not scan individual DatasetCase records.
+        #
+        # Case-level eligibility remains the responsibility of
+        # CaseEligibilityEvaluator during execution.
+        requirements = self.run_validation_service.get_requirements(
+            [evaluator for evaluator, _weight in evaluator_configs]
+        )
+
+        try:
+            self.run_validation_service.validate_policy(
+                dataset_capabilities=dataset_capabilities,
+                requirements=requirements,
+                policy=policy,
+                threshold=policy_threshold,
+            )
+        except EvaluationRunValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=exc.detail,
+            ) from exc
+
+        cases = await DatasetCaseService.list(
+            self.db,
+            run.dataset_version_id,
+        )
+
+        run.total_cases = len(cases)
+        run.completed_cases = 0
+        run.failed_cases = 0
 
         scoring_configuration = await self.scoring_configuration_service.get(
             self.db,
@@ -1256,8 +1385,8 @@ class EvaluationEngine:
                     summary["feedback"] = final_summary_feedback
 
                 except Exception:
-                    # The deterministic summary remains authoritative when
-                    # final qualitative LLM synthesis fails.
+                    # The deterministic summary remains authoritative
+                    # when final qualitative LLM synthesis fails.
                     summary["feedback"] = (
                         EvaluationRunSummaryService._build_final_fallback_feedback(
                             overall_score=summary["overall_score"],

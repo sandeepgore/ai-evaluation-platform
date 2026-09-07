@@ -2,10 +2,32 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.evaluation import EvaluationRunStatus
+from app.shared.enums import DataPolicy
 from app.models.evaluation.evaluation_type import EvaluationType
+
+
+class DataPolicyConfiguration(BaseModel):
+    type: DataPolicy = DataPolicy.STRICT
+    threshold: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    @model_validator(mode="after")
+    def validate_threshold(self) -> "DataPolicyConfiguration":
+        if self.type == DataPolicy.THRESHOLD and self.threshold is None:
+            raise ValueError("threshold is required when data policy type is 'threshold'.")
+
+        if self.type != DataPolicy.THRESHOLD and self.threshold is not None:
+            raise ValueError(
+                "threshold can only be configured when data policy type is 'threshold'."
+            )
+
+        return self
 
 
 class EvaluationRunCreate(BaseModel):

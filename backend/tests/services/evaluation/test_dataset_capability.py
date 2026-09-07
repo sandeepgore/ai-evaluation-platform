@@ -1,7 +1,5 @@
 from types import SimpleNamespace
 
-import pytest
-
 from app.services.evaluation.dataset_capability import (
     DatasetCapabilityAnalyzer,
 )
@@ -9,12 +7,12 @@ from app.services.evaluation.dataset_capability import (
 
 def make_case(
     *,
-    expected_output=None,
-    case_metadata=None,
+    has_reference=False,
+    has_context=False,
 ):
     return SimpleNamespace(
-        expected_output=expected_output,
-        case_metadata=case_metadata,
+        has_reference=has_reference,
+        has_context=has_context,
     )
 
 
@@ -35,8 +33,8 @@ def test_empty_dataset_has_no_capabilities():
 
 def test_reference_is_detected():
     cases = [
-        make_case(expected_output="Paris"),
-        make_case(expected_output="London"),
+        make_case(has_reference=True),
+        make_case(has_reference=True),
     ]
 
     capabilities = DatasetCapabilityAnalyzer.analyze(cases)
@@ -52,17 +50,9 @@ def test_reference_is_detected():
     assert capabilities.reference_coverage == 1.0
 
 
-@pytest.mark.parametrize(
-    "expected_output",
-    [
-        None,
-        "",
-        "   ",
-    ],
-)
-def test_empty_reference_is_not_considered_available(expected_output):
+def test_missing_reference_is_not_considered_available():
     cases = [
-        make_case(expected_output=expected_output),
+        make_case(has_reference=False),
     ]
 
     capabilities = DatasetCapabilityAnalyzer.analyze(cases)
@@ -76,10 +66,10 @@ def test_empty_reference_is_not_considered_available(expected_output):
 
 def test_partial_reference_coverage_is_detected():
     cases = [
-        make_case(expected_output="Paris"),
-        make_case(expected_output=None),
-        make_case(expected_output="London"),
-        make_case(expected_output=""),
+        make_case(has_reference=True),
+        make_case(has_reference=False),
+        make_case(has_reference=True),
+        make_case(has_reference=False),
     ]
 
     capabilities = DatasetCapabilityAnalyzer.analyze(cases)
@@ -95,13 +85,9 @@ def test_partial_reference_coverage_is_detected():
     assert capabilities.reference_coverage == 0.5
 
 
-def test_context_string_is_detected():
+def test_context_is_detected():
     cases = [
-        make_case(
-            case_metadata={
-                "context": "Paris is the capital of France.",
-            }
-        )
+        make_case(has_context=True),
     ]
 
     capabilities = DatasetCapabilityAnalyzer.analyze(cases)
@@ -110,119 +96,31 @@ def test_context_string_is_detected():
     assert capabilities.all_cases_have_context is True
 
     assert capabilities.cases_with_context == 1
+    assert capabilities.cases_without_context == 0
     assert capabilities.context_coverage == 1.0
 
 
-def test_retrieved_context_string_is_detected():
+def test_no_context_is_not_considered_available():
     cases = [
-        make_case(
-            case_metadata={
-                "retrieved_context": "Paris is the capital of France.",
-            }
-        )
-    ]
-
-    capabilities = DatasetCapabilityAnalyzer.analyze(cases)
-
-    assert capabilities.has_context is True
-
-
-def test_reference_context_string_is_detected():
-    cases = [
-        make_case(
-            case_metadata={
-                "reference_context": "Paris is the capital of France.",
-            }
-        )
-    ]
-
-    capabilities = DatasetCapabilityAnalyzer.analyze(cases)
-
-    assert capabilities.has_context is True
-
-
-def test_context_list_is_detected():
-    cases = [
-        make_case(
-            case_metadata={
-                "context": [
-                    "Paris is the capital of France.",
-                    "France is in Europe.",
-                ],
-            }
-        )
-    ]
-
-    capabilities = DatasetCapabilityAnalyzer.analyze(cases)
-
-    assert capabilities.has_context is True
-    assert capabilities.all_cases_have_context is True
-
-
-def test_empty_context_is_not_detected():
-    cases = [
-        make_case(
-            case_metadata={
-                "context": "",
-            }
-        ),
-        make_case(
-            case_metadata={
-                "context": [],
-            }
-        ),
-        make_case(
-            case_metadata={
-                "context": ["", "   "],
-            }
-        ),
+        make_case(has_context=False),
     ]
 
     capabilities = DatasetCapabilityAnalyzer.analyze(cases)
 
     assert capabilities.has_context is False
+    assert capabilities.all_cases_have_context is False
+
     assert capabilities.cases_with_context == 0
+    assert capabilities.cases_without_context == 1
     assert capabilities.context_coverage == 0.0
-
-
-def test_missing_metadata_is_not_context():
-    cases = [
-        make_case(expected_output="Paris"),
-        make_case(expected_output="London", case_metadata=None),
-        make_case(expected_output="Rome", case_metadata={}),
-    ]
-
-    capabilities = DatasetCapabilityAnalyzer.analyze(cases)
-
-    assert capabilities.has_reference is True
-    assert capabilities.has_context is False
-
-    assert capabilities.cases_with_context == 0
-    assert capabilities.cases_without_context == 3
 
 
 def test_partial_context_coverage_is_detected():
     cases = [
-        make_case(
-            case_metadata={
-                "context": "Paris is the capital of France.",
-            }
-        ),
-        make_case(
-            case_metadata=None,
-        ),
-        make_case(
-            case_metadata={
-                "retrieved_context": [
-                    "London is the capital of England.",
-                ],
-            }
-        ),
-        make_case(
-            case_metadata={
-                "context": "",
-            }
-        ),
+        make_case(has_context=True),
+        make_case(has_context=False),
+        make_case(has_context=True),
+        make_case(has_context=False),
     ]
 
     capabilities = DatasetCapabilityAnalyzer.analyze(cases)
@@ -241,16 +139,12 @@ def test_partial_context_coverage_is_detected():
 def test_reference_and_context_can_exist_together():
     cases = [
         make_case(
-            expected_output="Paris",
-            case_metadata={
-                "context": "Paris is the capital of France.",
-            },
+            has_reference=True,
+            has_context=True,
         ),
         make_case(
-            expected_output="London",
-            case_metadata={
-                "context": "London is the capital of England.",
-            },
+            has_reference=True,
+            has_context=True,
         ),
     ]
 
@@ -264,3 +158,42 @@ def test_reference_and_context_can_exist_together():
 
     assert capabilities.reference_coverage == 1.0
     assert capabilities.context_coverage == 1.0
+
+
+def test_reference_and_context_can_be_partial_independently():
+    cases = [
+        make_case(
+            has_reference=True,
+            has_context=True,
+        ),
+        make_case(
+            has_reference=True,
+            has_context=False,
+        ),
+        make_case(
+            has_reference=False,
+            has_context=True,
+        ),
+        make_case(
+            has_reference=False,
+            has_context=False,
+        ),
+    ]
+
+    capabilities = DatasetCapabilityAnalyzer.analyze(cases)
+
+    assert capabilities.total_cases == 4
+
+    assert capabilities.cases_with_reference == 2
+    assert capabilities.cases_without_reference == 2
+    assert capabilities.reference_coverage == 0.5
+
+    assert capabilities.cases_with_context == 2
+    assert capabilities.cases_without_context == 2
+    assert capabilities.context_coverage == 0.5
+
+    assert capabilities.has_reference is True
+    assert capabilities.has_context is True
+
+    assert capabilities.all_cases_have_reference is False
+    assert capabilities.all_cases_have_context is False
