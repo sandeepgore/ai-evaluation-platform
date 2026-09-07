@@ -156,6 +156,8 @@ def test_default_registry_contains_all_current_evaluators():
         "rouge",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
         "llm_judge",
     }
 
@@ -173,6 +175,8 @@ def test_default_registry_contains_all_current_evaluators():
         "rouge",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
     ],
 )
 def test_default_registry_returns_evaluator(name: str):
@@ -199,6 +203,8 @@ def test_registry_list_evaluators_returns_canonical_evaluators():
         "rouge_l",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
         "llm_judge",
     ]
 
@@ -229,6 +235,8 @@ def test_registry_list_metadata_returns_all_metadata():
         "rouge_l",
         "relevance",
         "faithfulness",
+        "context_recall",
+        "context_precision",
         "llm_judge",
     ]
 

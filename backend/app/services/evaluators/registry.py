@@ -10,6 +10,8 @@ from app.services.evaluators.relevance import RelevanceEvaluator
 from app.services.evaluators.rouge import ROUGELvaluator
 from app.services.evaluators.llm_judge import LLMJudgeEvaluator
 from app.services.model_gateway import ModelGateway
+from app.services.evaluators.context_precision import ContextPrecisionEvaluator
+from app.services.evaluators.context_recall import ContextRecallEvaluator
 
 
 class EvaluatorRegistry:
@@ -263,6 +265,10 @@ def create_default_registry(
     registry.register(RelevanceEvaluator())
 
     registry.register(FaithfulnessEvaluator())
+
+    registry.register(ContextRecallEvaluator())
+
+    registry.register(ContextPrecisionEvaluator())
 
     # --------------------------------------------------------------
     # LLM AS A JUDGE

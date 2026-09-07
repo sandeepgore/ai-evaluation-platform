@@ -74,6 +74,20 @@ class DefaultEvaluationPolicy:
                 evaluator_name="faithfulness",
                 requirements=(DataRequirement.CONTEXT,),
             ),
+            DefaultEvaluatorRule(
+                evaluator_name="context_recall",
+                requirements=(
+                    DataRequirement.REFERENCE,
+                    DataRequirement.CONTEXT,
+                ),
+            ),
+            DefaultEvaluatorRule(
+                evaluator_name="context_precision",
+                requirements=(
+                    DataRequirement.REFERENCE,
+                    DataRequirement.CONTEXT,
+                ),
+            ),
         ),
     }
 
