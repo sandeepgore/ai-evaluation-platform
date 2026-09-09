@@ -28,7 +28,10 @@ class DatasetCapabilityService:
         """
 
         result = await db.execute(
-            select(DatasetVersion).where(DatasetVersion.id == dataset_version_id)
+            select(DatasetVersion).where(
+                DatasetVersion.id == dataset_version_id,
+                DatasetVersion.is_active.is_(True),
+            )
         )
 
         version = result.scalar_one_or_none()

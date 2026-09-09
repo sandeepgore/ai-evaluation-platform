@@ -493,3 +493,36 @@ async def test_import_json_calculates_context_capability():
     assert version.analytics is not None
     assert version.analytics["context_count"] == 3
     assert version.analytics["context_coverage"] == 0.75
+
+
+@pytest.mark.asyncio
+async def test_import_json_rejects_inactive_dataset():
+    dataset_result = MagicMock()
+    dataset_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = dataset_result
+
+    payload = DatasetImportPayload(
+        cases=[
+            DatasetImportCase(
+                input="Test input",
+                expected_output="Test output",
+            )
+        ]
+    )
+
+    service = DatasetImportService(db)
+
+    with pytest.raises(
+        HTTPException,
+        match="Dataset not found.",
+    ):
+        await service.import_json(
+            uuid4(),
+            payload,
+        )
+
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()

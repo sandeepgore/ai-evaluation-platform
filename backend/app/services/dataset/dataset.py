@@ -27,9 +27,7 @@ class DatasetService:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise ValueError(
-                "A dataset with this slug already exists in this project."
-            )
+            raise ValueError("A dataset with this slug already exists in this project.")
 
         await self.db.refresh(dataset)
 
@@ -37,7 +35,10 @@ class DatasetService:
 
     async def get(self, dataset_id: UUID) -> Dataset | None:
         result = await self.db.execute(
-            select(Dataset).where(Dataset.id == dataset_id)
+            select(Dataset).where(
+                Dataset.id == dataset_id,
+                Dataset.is_active.is_(True),
+            )
         )
 
         return result.scalar_one_or_none()
@@ -45,7 +46,10 @@ class DatasetService:
     async def list_by_project(self, project_id: UUID) -> list[Dataset]:
         result = await self.db.execute(
             select(Dataset)
-            .where(Dataset.project_id == project_id)
+            .where(
+                Dataset.project_id == project_id,
+                Dataset.is_active.is_(True),
+            )
             .order_by(Dataset.created_at.desc())
         )
 
@@ -61,6 +65,9 @@ class DatasetService:
         if dataset is None:
             return None
 
+        if not dataset.is_active:
+            raise ValueError("Cannot update an inactive dataset.")
+
         updates = data.model_dump(exclude_unset=True)
 
         for field, value in updates.items():
@@ -70,9 +77,7 @@ class DatasetService:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise ValueError(
-                "A dataset with this slug already exists in this project."
-            )
+            raise ValueError("A dataset with this slug already exists in this project.")
 
         await self.db.refresh(dataset)
 
@@ -84,7 +89,7 @@ class DatasetService:
         if dataset is None:
             return False
 
-        await self.db.delete(dataset)
+        dataset.is_active = False
         await self.db.commit()
 
         return True

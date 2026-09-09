@@ -57,6 +57,19 @@ async def get_dataset_version(
     return await service.get(version_id)
 
 
+@router.post(
+    "/{version_id}/finalize",
+    response_model=DatasetVersionResponse,
+)
+async def finalize_dataset_version(
+    version_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    service = DatasetVersionService(db)
+
+    return await service.finalize(version_id)
+
+
 @router.patch(
     "/{version_id}",
     response_model=DatasetVersionResponse,

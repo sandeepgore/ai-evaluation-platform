@@ -174,7 +174,6 @@ async def test_update_model():
     assert model.name == "Updated Model"
     assert model.model_identifier == "updated-model"
     assert model.configuration == {"temperature": 0.2}
-    assert model.is_active is False
 
     db.commit.assert_awaited_once()
     db.refresh.assert_awaited_once_with(model)
@@ -273,7 +272,9 @@ async def test_delete_model():
 
     await service.delete(model.id)
 
-    db.delete.assert_awaited_once_with(model)
+    assert model.is_active is False
+
+    db.delete.assert_not_awaited()
     db.commit.assert_awaited_once()
 
 
@@ -297,3 +298,43 @@ async def test_delete_model_raises_404_when_not_found():
 
     db.delete.assert_not_awaited()
     db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_model_returns_404_for_inactive_model():
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    service = ModelService(db)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.get(uuid4())
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Model not found"
+
+    db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_list_models_by_project_excludes_inactive_models():
+    project_id = uuid4()
+
+    active_model = create_model()
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [active_model]
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    service = ModelService(db)
+
+    models = await service.list(project_id)
+
+    assert models == [active_model]
+
+    db.execute.assert_awaited_once()

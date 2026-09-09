@@ -56,8 +56,13 @@ class EvaluationResultService:
         db: AsyncSession,
         result_id: UUID,
     ) -> EvaluationResult | None:
-        result = await db.get(EvaluationResult, result_id)
-        return result
+        result = await db.execute(
+            select(EvaluationResult).where(
+                EvaluationResult.id == result_id,
+                EvaluationResult.is_active.is_(True),
+            )
+        )
+        return result.scalar_one_or_none()
 
     @staticmethod
     async def update(
@@ -65,6 +70,9 @@ class EvaluationResultService:
         result: EvaluationResult,
         **fields,
     ) -> EvaluationResult:
+        if not result.is_active:
+            raise ValueError("Evaluation result is inactive")
+
         for field, value in fields.items():
             if value is not None and hasattr(result, field):
                 setattr(result, field, value)
@@ -79,6 +87,9 @@ class EvaluationResultService:
         db: AsyncSession,
         result: EvaluationResult,
     ) -> None:
+        if not result.is_active:
+            raise ValueError("Evaluation result is already inactive")
+
         result.is_active = False
 
         await db.commit()

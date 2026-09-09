@@ -167,22 +167,24 @@ def create_case(
     *,
     has_reference: bool = True,
     has_context: bool = False,
+    context=None,
 ):
     return SimpleNamespace(
         id=uuid4(),
         input=input_text,
         expected_output=expected_output,
+        context=context,
+        case_metadata=None,
         has_reference=has_reference,
         has_context=has_context,
     )
 
 
 def capabilities_from_cases(cases) -> DatasetCapabilities:
-    """
-    Build dataset-level capabilities from the test cases.
+    """Build dataset-level capabilities from the test cases.
 
-    Engine tests use this helper instead of depending on the fake
-    SQLAlchemy result returned by the model lookup.
+    Engine tests use this helper instead of depending on the fake SQLAlchemy
+    result returned by the model lookup.
     """
     total_cases = len(cases)
 
@@ -213,12 +215,11 @@ def mock_dataset_capabilities(
     monkeypatch,
     cases,
 ):
-    """
-    Mock dataset-level capability analysis for EvaluationEngine tests.
+    """Mock dataset-level capability analysis for EvaluationEngine tests.
 
-    DatasetCapabilityService has its own dedicated tests. Engine tests
-    should provide the capabilities explicitly so they do not depend
-    on SQLAlchemy result-shape details.
+    DatasetCapabilityService has its own dedicated tests. Engine tests should
+    provide the capabilities explicitly so they do not depend on SQLAlchemy
+    result-shape details.
     """
     monkeypatch.setattr(
         engine_module.DatasetCapabilityService,
@@ -1874,7 +1875,12 @@ async def test_engine_persists_deterministic_feedback_without_rolling_reducer(
 
     summary_save.assert_awaited_once()
 
-    summary_payload = summary_save.await_args.args[2]
+    persisted_summary = summary_save.await_args
+
+    assert persisted_summary.args[0] is db
+    assert persisted_summary.args[1] == run.id
+
+    summary_payload = persisted_summary.args[2]
 
     feedback = summary_payload["feedback"]
 
@@ -2269,3 +2275,462 @@ async def test_evaluate_case_returns_no_overall_score_when_all_metrics_are_not_a
     f1.evaluate.assert_not_awaited()
 
     scoring_service.calculate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_engine_resolves_simple_prompt_before_model_execution(monkeypatch):
+    model = create_model()
+
+    case = create_case(
+        "What is RAG?",
+        "RAG combines retrieval and generation.",
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    run.configuration["prompt"] = {
+        "mode": "simple",
+        "instruction": "Answer concisely.",
+    }
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock(
+        return_value=create_response("RAG combines retrieval and generation.")
+    )
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        AsyncMock(),
+    )
+
+    await engine.execute(run.id)
+
+    model_gateway.generate.assert_awaited_once()
+
+    call = model_gateway.generate.await_args
+
+    assert call.kwargs["prompt"] == "Answer concisely.\n\nWhat is RAG?"
+
+    # Prompt configuration belongs to the run-level prompt layer,
+    # not the provider/model configuration.
+    assert "prompt" not in call.kwargs["configuration"]
+
+
+@pytest.mark.asyncio
+async def test_engine_resolves_advanced_prompt_with_case_input_and_context(
+    monkeypatch,
+):
+    model = create_model()
+
+    case = create_case(
+        "What is RAG?",
+        "RAG combines retrieval and generation.",
+        has_context=True,
+        context=[
+            "RAG retrieves relevant documents.",
+            "The generator uses the retrieved context.",
+        ],
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.RAG,
+        execution_mode="sequential",
+    )
+
+    # Use a context evaluator so the case remains eligible.
+    run.configuration["evaluators"] = [
+        {
+            "name": "faithfulness",
+            "weight": 1.0,
+        }
+    ]
+
+    run.configuration["prompt"] = {
+        "mode": "advanced",
+        "system": "You are a precise AI assistant.",
+        "user_template": "Question:\n{{input}}\n\nContext:\n{{context}}",
+    }
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    evaluator_registry.register(
+        FakeContextEvaluator(
+            "faithfulness",
+            0.8,
+        )
+    )
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock(
+        return_value=create_response("RAG combines retrieval and generation.")
+    )
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        AsyncMock(),
+    )
+
+    await engine.execute(run.id)
+
+    model_gateway.generate.assert_awaited_once()
+
+    call = model_gateway.generate.await_args
+
+    assert call.kwargs["prompt"] == (
+        "You are a precise AI assistant.\n\n"
+        "Question:\nWhat is RAG?\n\n"
+        "Context:\n"
+        "RAG retrieves relevant documents.\n"
+        "The generator uses the retrieved context."
+    )
+
+
+@pytest.mark.asyncio
+async def test_engine_without_prompt_preserves_original_case_input(
+    monkeypatch,
+):
+    model = create_model()
+
+    case = create_case(
+        "What is RAG?",
+        "RAG combines retrieval and generation.",
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    # Explicitly verify the old behavior remains unchanged.
+    assert "prompt" not in run.configuration
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock(
+        return_value=create_response("RAG combines retrieval and generation.")
+    )
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=[case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [case],
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        AsyncMock(),
+    )
+
+    await engine.execute(run.id)
+
+    model_gateway.generate.assert_awaited_once_with(
+        prompt="What is RAG?",
+        configuration={
+            "execution_mode": "sequential",
+            "batch_size": 10,
+            "evaluators": [
+                {
+                    "name": "exact_match",
+                    "weight": 0.5,
+                },
+                {
+                    "name": "f1",
+                    "weight": 0.5,
+                },
+            ],
+            "scoring": {
+                "weights": {
+                    "exact_match": 0.5,
+                    "f1": 0.5,
+                }
+            },
+            "model": "mock-model",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_engine_does_not_call_model_when_no_evaluator_is_applicable(
+    monkeypatch,
+):
+    model = create_model()
+
+    reference_case = create_case(
+        "Reference case",
+        "Expected answer",
+        has_reference=True,
+        has_context=False,
+    )
+
+    case = create_case(
+        "What is RAG?",
+        None,
+        has_reference=False,
+        has_context=False,
+    )
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    run.configuration["evaluators"] = [
+        {
+            "name": "exact_match",
+            "weight": 1.0,
+        }
+    ]
+
+    run.configuration["data_policy"] = {
+        "type": "partial",
+    }
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=[reference_case, case]),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        [reference_case, case],
+    )
+
+    evaluation_result_create = AsyncMock(
+        return_value=SimpleNamespace(
+            id=uuid4(),
+            feedback=None,
+        )
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        evaluation_result_create,
+    )
+
+    result = await engine.execute(run.id)
+
+    assert result.status == EvaluationRunStatus.COMPLETED
+    assert result.total_cases == 2
+    assert result.completed_cases == 2
+    assert result.failed_cases == 0
+
+    # The reference case is eligible and therefore calls the model.
+    # The no-reference case is NOT_APPLICABLE and must not call it.
+    model_gateway.generate.assert_awaited_once()
+    model_gateway.generate_batch.assert_not_awaited()
+
+    assert evaluation_result_create.await_count == 2
+
+    saved_results = [call.kwargs for call in evaluation_result_create.call_args_list]
+
+    not_applicable_result = next(
+        result
+        for result in saved_results
+        if result["scores"]["exact_match"]["status"] == "not_applicable"
+    )
+
+    assert not_applicable_result["status"] == "completed"
+    assert not_applicable_result["scores"]["exact_match"]["score"] is None
+    assert not_applicable_result["scores"]["overall"]["status"] == "not_applicable"
+    assert not_applicable_result["scores"]["overall"]["score"] is None
+
+
+@pytest.mark.asyncio
+async def test_engine_resolves_prompt_for_batch_cases(monkeypatch):
+    model = create_model()
+
+    cases = [
+        create_case(
+            "question 1",
+            "answer 1",
+        ),
+        create_case(
+            "question 2",
+            "answer 2",
+        ),
+    ]
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="batch",
+        batch_size=10,
+    )
+
+    run.configuration["prompt"] = {
+        "mode": "simple",
+        "instruction": "Answer using one sentence.",
+    }
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+
+    model_gateway.generate_batch = AsyncMock(
+        return_value=[
+            create_response("answer 1"),
+            create_response("answer 2"),
+        ]
+    )
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=cases),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        cases,
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        AsyncMock(),
+    )
+
+    await engine.execute(run.id)
+
+    model_gateway.generate_batch.assert_awaited_once()
+
+    call = model_gateway.generate_batch.await_args
+
+    assert call.kwargs["prompts"] == [
+        "Answer using one sentence.\n\nquestion 1",
+        "Answer using one sentence.\n\nquestion 2",
+    ]
+
+    assert "prompt" not in call.kwargs["configuration"]

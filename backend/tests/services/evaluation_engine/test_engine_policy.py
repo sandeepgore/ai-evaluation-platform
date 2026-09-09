@@ -195,7 +195,9 @@ def test_default_evaluators_receive_effective_policy():
     )
 
     # Mock return values matching resolved default evaluators count
-    engine.applicability_service.validate = MagicMock(side_effect=lambda names, capabilities: names)
+    engine.applicability_service.validate = MagicMock(
+        side_effect=lambda names, capabilities, defer_data_requirements=False: names
+    )
 
     engine._get_evaluators(
         run,
@@ -262,7 +264,9 @@ def test_threshold_policy_is_passed_to_default_evaluator_resolution():
         llm_available=False,
     )
 
-    engine.applicability_service.validate = MagicMock(side_effect=lambda names, capabilities: names)
+    engine.applicability_service.validate = MagicMock(
+        side_effect=lambda names, capabilities, defer_data_requirements=False: names
+    )
 
     engine._get_evaluators(
         run,

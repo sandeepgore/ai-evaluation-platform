@@ -192,3 +192,152 @@ async def test_create_rejects_invalid_configuration_before_persistence():
     db.add.assert_not_called()
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_by_id_returns_none_for_inactive_run():
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    run = await EvaluationRunService.get_by_id(
+        db,
+        uuid4(),
+    )
+
+    assert run is None
+    db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_list_returns_active_runs_only():
+    dataset_version_id = uuid4()
+
+    active_run = MagicMock()
+    active_run.is_active = True
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [active_run]
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    runs = await EvaluationRunService.list(
+        db,
+        dataset_version_id=dataset_version_id,
+    )
+
+    assert runs == [active_run]
+    db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_soft_deletes_evaluation_run():
+    run = MagicMock()
+    run.is_active = True
+
+    db = AsyncMock()
+
+    await EvaluationRunService.delete(
+        db,
+        run,
+    )
+
+    assert run.is_active is False
+    db.delete.assert_not_awaited()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_inactive_run():
+    run = MagicMock()
+    run.is_active = False
+
+    db = AsyncMock()
+
+    data = EvaluationRunUpdate(
+        name="updated name",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Evaluation run is inactive",
+    ):
+        await EvaluationRunService.update(
+            db,
+            run,
+            data,
+        )
+
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_inactive_dataset_version():
+    dataset_version_result = MagicMock()
+    dataset_version_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = dataset_version_result
+
+    data = EvaluationRunCreate(
+        dataset_version_id=uuid4(),
+        model_id=uuid4(),
+        name="Inactive Dataset Version Evaluation",
+        evaluation_type="text",
+        configuration={},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Dataset version not found",
+    ):
+        await EvaluationRunService.create(
+            db,
+            data,
+        )
+
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_inactive_model():
+    dataset_version = MagicMock()
+    dataset_version.case_count = 8
+
+    dataset_version_result = MagicMock()
+    dataset_version_result.scalar_one_or_none.return_value = dataset_version
+
+    model_result = MagicMock()
+    model_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        dataset_version_result,
+        model_result,
+    ]
+
+    data = EvaluationRunCreate(
+        dataset_version_id=uuid4(),
+        model_id=uuid4(),
+        name="Inactive Model Evaluation",
+        evaluation_type="text",
+        configuration={},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Model not found",
+    ):
+        await EvaluationRunService.create(
+            db,
+            data,
+        )
+
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
+    db.refresh.assert_not_awaited()

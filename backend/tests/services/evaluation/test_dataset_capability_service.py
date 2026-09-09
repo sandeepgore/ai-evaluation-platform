@@ -157,3 +157,25 @@ async def test_analyze_dataset_version_raises_when_dataset_version_not_found():
 
     # Since the version does not exist, the cases query must never run.
     db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_analyze_dataset_version_rejects_inactive_dataset_version():
+    dataset_version_id = uuid4()
+
+    version_result = MagicMock()
+    version_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = version_result
+
+    with pytest.raises(
+        ValueError,
+        match="Dataset version not found",
+    ):
+        await DatasetCapabilityService.analyze_dataset_version(
+            db=db,
+            dataset_version_id=dataset_version_id,
+        )
+
+    db.execute.assert_awaited_once()

@@ -145,6 +145,7 @@ async def test_update_project_with_no_fields():
 @pytest.mark.asyncio
 async def test_delete_project():
     project = MagicMock()
+    project.is_active = True
 
     db = AsyncMock()
 
@@ -152,5 +153,26 @@ async def test_delete_project():
 
     await service.delete(project)
 
-    db.delete.assert_awaited_once_with(project)
+    assert project.is_active is False
+    db.delete.assert_not_awaited()
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_by_id_uses_active_projects_only():
+    project = MagicMock()
+    project.id = uuid4()
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = project
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    service = ProjectService(db)
+
+    returned = await service.get_by_id(project.id)
+
+    assert returned == project
+
+    db.execute.assert_awaited_once()

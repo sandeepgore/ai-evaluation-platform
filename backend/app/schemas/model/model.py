@@ -41,7 +41,6 @@ class ModelUpdate(BaseModel):
     )
     model_type: ModelType | None = None
     configuration: dict[str, Any] | None = None
-    is_active: bool | None = None
 
     input_price_per_million: float | None = Field(
         default=None,

@@ -79,7 +79,10 @@ class EvaluationRunService:
         # --------------------------------------------------------------
 
         dataset_version_result = await db.execute(
-            select(DatasetVersion).where(DatasetVersion.id == data.dataset_version_id)
+            select(DatasetVersion).where(
+                DatasetVersion.id == data.dataset_version_id,
+                DatasetVersion.is_active.is_(True),
+            )
         )
 
         dataset_version = dataset_version_result.scalar_one_or_none()
@@ -91,7 +94,12 @@ class EvaluationRunService:
         # Verify model exists
         # --------------------------------------------------------------
 
-        model_result = await db.execute(select(Model).where(Model.id == data.model_id))
+        model_result = await db.execute(
+            select(Model).where(
+                Model.id == data.model_id,
+                Model.is_active.is_(True),
+            )
+        )
 
         model = model_result.scalar_one_or_none()
 
@@ -144,7 +152,12 @@ class EvaluationRunService:
         db: AsyncSession,
         run_id: UUID,
     ) -> EvaluationRun | None:
-        result = await db.execute(select(EvaluationRun).where(EvaluationRun.id == run_id))
+        result = await db.execute(
+            select(EvaluationRun).where(
+                EvaluationRun.id == run_id,
+                EvaluationRun.is_active.is_(True),
+            )
+        )
 
         return result.scalar_one_or_none()
 
@@ -154,7 +167,7 @@ class EvaluationRunService:
         dataset_version_id: UUID | None = None,
         model_id: UUID | None = None,
     ) -> list[EvaluationRun]:
-        query = select(EvaluationRun)
+        query = select(EvaluationRun).where(EvaluationRun.is_active.is_(True))
 
         if dataset_version_id is not None:
             query = query.where(EvaluationRun.dataset_version_id == dataset_version_id)
@@ -174,6 +187,10 @@ class EvaluationRunService:
         run: EvaluationRun,
         data: EvaluationRunUpdate,
     ) -> EvaluationRun:
+
+        if not run.is_active:
+            raise ValueError("Evaluation run is inactive")
+
         update_data = data.model_dump(
             exclude_unset=True,
         )
@@ -197,5 +214,8 @@ class EvaluationRunService:
         db: AsyncSession,
         run: EvaluationRun,
     ) -> None:
-        await db.delete(run)
+        if not run.is_active:
+            raise ValueError("Evaluation run is already inactive")
+
+        run.is_active = False
         await db.commit()
