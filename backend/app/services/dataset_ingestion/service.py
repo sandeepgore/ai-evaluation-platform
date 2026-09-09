@@ -28,7 +28,12 @@ class DatasetImportService:
             # Lock the dataset so concurrent imports for the same
             # dataset cannot select the same next version number.
             dataset_result = await self.db.execute(
-                select(Dataset).where(Dataset.id == dataset_id).with_for_update()
+                select(Dataset)
+                .where(
+                    Dataset.id == dataset_id,
+                    Dataset.is_active.is_(True),
+                )
+                .with_for_update()
             )
 
             dataset = dataset_result.scalar_one_or_none()
@@ -48,7 +53,10 @@ class DatasetImportService:
                         0,
                     )
                     + 1
-                ).where(DatasetVersion.dataset_id == dataset_id)
+                ).where(
+                    DatasetVersion.dataset_id == dataset_id,
+                    DatasetVersion.is_active.is_(True),
+                )
             )
 
             next_version = version_result.scalar_one()

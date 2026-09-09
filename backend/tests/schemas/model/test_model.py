@@ -110,14 +110,13 @@ def test_model_create_accepts_all_supported_model_types(model_type):
 def test_model_update_allows_partial_update():
     data = ModelUpdate(
         name="Updated Model",
-        is_active=False,
     )
 
     assert data.name == "Updated Model"
-    assert data.is_active is False
     assert data.provider is None
     assert data.model_identifier is None
     assert data.model_type is None
+    assert data.configuration is None
 
 
 @pytest.mark.parametrize("field", ["name", "model_identifier"])
@@ -138,12 +137,6 @@ def test_model_update_allows_configuration():
         "temperature": 0.2,
         "max_tokens": 500,
     }
-
-
-def test_model_update_allows_is_active():
-    data = ModelUpdate(is_active=False)
-
-    assert data.is_active is False
 
 
 def test_model_update_allows_provider_and_type():

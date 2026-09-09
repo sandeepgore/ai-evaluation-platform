@@ -32,7 +32,10 @@ class ModelService:
 
     async def get(self, model_id: UUID) -> Model:
         result = await self.db.execute(
-            select(Model).where(Model.id == model_id)
+            select(Model).where(
+                Model.id == model_id,
+                Model.is_active.is_(True),
+            )
         )
 
         model = result.scalar_one_or_none()
@@ -48,7 +51,10 @@ class ModelService:
     async def list(self, project_id: UUID) -> list[Model]:
         result = await self.db.execute(
             select(Model)
-            .where(Model.project_id == project_id)
+            .where(
+                Model.project_id == project_id,
+                Model.is_active.is_(True),
+            )
             .order_by(Model.created_at.desc())
         )
 
@@ -81,5 +87,6 @@ class ModelService:
     async def delete(self, model_id: UUID) -> None:
         model = await self.get(model_id)
 
-        await self.db.delete(model)
+        model.is_active = False
+
         await self.db.commit()

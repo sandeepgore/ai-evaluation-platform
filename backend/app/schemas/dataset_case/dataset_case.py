@@ -16,7 +16,6 @@ class DatasetCaseUpdate(BaseModel):
     expected_output: str | None = None
     case_metadata: dict[str, Any] | None = None
     position: int | None = Field(default=None, ge=0)
-    is_active: bool | None = None
 
 
 class DatasetCaseResponse(BaseModel):

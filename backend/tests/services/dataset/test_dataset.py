@@ -211,6 +211,7 @@ async def test_update_dataset_rejects_duplicate_slug():
 @pytest.mark.asyncio
 async def test_delete_dataset():
     dataset = MagicMock()
+    dataset.is_active = True
 
     db = AsyncMock()
 
@@ -218,9 +219,12 @@ async def test_delete_dataset():
 
     service.get = AsyncMock(return_value=dataset)
 
-    await service.delete(dataset.id)
+    deleted = await service.delete(dataset.id)
 
-    db.delete.assert_awaited_once_with(dataset)
+    assert deleted is True
+    assert dataset.is_active is False
+
+    db.delete.assert_not_awaited()
     db.commit.assert_awaited_once()
 
 

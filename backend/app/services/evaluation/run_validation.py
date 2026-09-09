@@ -18,12 +18,12 @@ from app.services.evaluators.applicability import (
     EvaluationCapabilities,
     EvaluatorApplicabilityService,
 )
+from app.services.prompt.config import PromptConfig
 from app.shared.enums import DataPolicy
 
 
 class EvaluationRunValidationError(ValueError):
     """Raised when an evaluation run configuration violates
-
     platform validation rules.
     """
 
@@ -142,6 +142,38 @@ class EvaluationRunValidationService:
         )
 
     # ------------------------------------------------------------------
+    # Prompt configuration
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def resolve_prompt_config(
+        configuration: dict[str, Any] | None,
+    ) -> PromptConfig | None:
+        configuration = configuration or {}
+
+        configured_prompt = configuration.get(
+            "prompt",
+        )
+
+        if configured_prompt is None:
+            return None
+
+        if not isinstance(
+            configured_prompt,
+            dict,
+        ):
+            raise EvaluationRunValidationError("'prompt' must be an object.")
+
+        try:
+            return PromptConfig.model_validate(
+                configured_prompt,
+            )
+        except ValueError as exc:
+            raise EvaluationRunValidationError(
+                str(exc),
+            ) from exc
+
+    # ------------------------------------------------------------------
     # Evaluation capabilities
     # ------------------------------------------------------------------
 
@@ -154,10 +186,14 @@ class EvaluationRunValidationService:
         available_inputs = {"actual_output"}
 
         if dataset_capabilities.has_reference:
-            available_inputs.add("expected_output")
+            available_inputs.add(
+                "expected_output",
+            )
 
         if dataset_capabilities.has_context:
-            available_inputs.add("context")
+            available_inputs.add(
+                "context",
+            )
 
         return EvaluationCapabilities(
             evaluation_type=evaluation_type,
@@ -189,9 +225,12 @@ class EvaluationRunValidationService:
                 return self.applicability_service.validate_configuration(
                     configuration,
                     capabilities,
+                    defer_data_requirements=True,
                 )
             except ValueError as exc:
-                raise EvaluationRunValidationError(str(exc)) from exc
+                raise EvaluationRunValidationError(
+                    str(exc),
+                ) from exc
 
         from app.services.evaluation.evaluation_defaults import (
             DefaultEvaluationResolver,
@@ -213,9 +252,12 @@ class EvaluationRunValidationService:
             return self.applicability_service.validate(
                 evaluator_names,
                 capabilities,
+                defer_data_requirements=True,
             )
         except ValueError as exc:
-            raise EvaluationRunValidationError(str(exc)) from exc
+            raise EvaluationRunValidationError(
+                str(exc),
+            ) from exc
 
     # ------------------------------------------------------------------
     # Data requirements
@@ -272,7 +314,7 @@ class EvaluationRunValidationService:
 
             raise EvaluationRunValidationError(
                 {
-                    "message": "Evaluation run violates the configured data policy.",
+                    "message": ("Evaluation run violates the configured data policy."),
                     "policy": policy.value,
                     "requirement": requirement.value,
                     "coverage": decision.coverage,
@@ -307,6 +349,14 @@ class EvaluationRunValidationService:
         # --------------------------------------------------------------
 
         policy_configuration = self.resolve_data_policy(
+            configuration,
+        )
+
+        # --------------------------------------------------------------
+        # Prompt configuration
+        # --------------------------------------------------------------
+
+        self.resolve_prompt_config(
             configuration,
         )
 

@@ -27,7 +27,10 @@ class ProjectService:
 
     async def get_by_id(self, project_id: UUID) -> Project | None:
         result = await self.db.execute(
-            select(Project).where(Project.id == project_id)
+            select(Project).where(
+                Project.id == project_id,
+                Project.is_active.is_(True),
+            )
         )
 
         return result.scalar_one_or_none()
@@ -38,7 +41,10 @@ class ProjectService:
     ) -> list[Project]:
         result = await self.db.execute(
             select(Project)
-            .where(Project.organization_id == organization_id)
+            .where(
+                Project.organization_id == organization_id,
+                Project.is_active.is_(True),
+            )
             .order_by(Project.created_at.desc())
         )
 
@@ -49,6 +55,9 @@ class ProjectService:
         project: Project,
         data: ProjectUpdate,
     ) -> Project:
+        if not project.is_active:
+            raise ValueError("Cannot update an inactive project.")
+
         updates = data.model_dump(exclude_unset=True)
 
         for field, value in updates.items():
@@ -60,5 +69,6 @@ class ProjectService:
         return project
 
     async def delete(self, project: Project) -> None:
-        await self.db.delete(project)
+        project.is_active = False
+
         await self.db.commit()

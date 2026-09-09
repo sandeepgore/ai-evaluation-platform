@@ -13,7 +13,6 @@ class DatasetVersionCreate(BaseModel):
 
 
 class DatasetVersionUpdate(BaseModel):
-    status: DatasetVersionStatus | None = None
     description: str | None = None
     is_active: bool | None = None
 
