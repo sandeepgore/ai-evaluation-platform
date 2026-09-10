@@ -1,15 +1,14 @@
+from app.config.settings import settings
 from app.models.model import Model, ModelProvider
 from app.services.model_gateway.base import ModelGateway
 from app.services.model_gateway.mock import MockModelProvider
 from app.services.model_gateway.ollama import OllamaModelProvider
+from app.services.model_gateway.openai import OpenAIModelProvider
+from app.services.model_gateway.anthropic import AnthropicModelProvider
+from app.services.model_gateway.google import GoogleModelProvider
 
 
 class ModelGatewayFactory:
-    """
-    Creates the appropriate ModelGateway implementation
-    for a configured model.
-    """
-
     @staticmethod
     def create(model: Model) -> ModelGateway:
         if model.provider == ModelProvider.MOCK:
@@ -19,13 +18,19 @@ class ModelGatewayFactory:
             return OllamaModelProvider()
 
         if model.provider == ModelProvider.OPENAI:
-            raise ValueError("OpenAI model provider is not implemented yet.")
+            return OpenAIModelProvider(
+                api_key=settings.openai_api_key,
+            )
 
         if model.provider == ModelProvider.ANTHROPIC:
-            raise ValueError("Anthropic model provider is not implemented yet.")
+            return AnthropicModelProvider(
+                api_key=settings.anthropic_api_key,
+            )
 
         if model.provider == ModelProvider.GOOGLE:
-            raise ValueError("Google model provider is not implemented yet.")
+            return GoogleModelProvider(
+                api_key=settings.google_api_key,
+            )
 
         if model.provider == ModelProvider.HUGGINGFACE:
             raise ValueError("Hugging Face model provider is not implemented yet.")

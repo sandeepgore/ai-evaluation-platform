@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     default_data_policy_threshold: float = 1.0
 
     # ------------------------------------------------------------------
+    # Provider credentials
+    # ------------------------------------------------------------------
+
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    google_api_key: str | None = None
+
+    # ------------------------------------------------------------------
     # Prompt guardrails
     # ------------------------------------------------------------------
 
