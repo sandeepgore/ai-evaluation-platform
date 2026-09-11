@@ -3,13 +3,15 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.model_gateway.azure_openai import AzureOpenAIModelProvider
 from app.models.model import ModelProvider
 from app.services.model_gateway.anthropic import AnthropicModelProvider
 from app.services.model_gateway.factory import ModelGatewayFactory
+from app.services.model_gateway.google import GoogleModelProvider
+from app.services.model_gateway.huggingface import HuggingFaceModelProvider
 from app.services.model_gateway.mock import MockModelProvider
 from app.services.model_gateway.ollama import OllamaModelProvider
 from app.services.model_gateway.openai import OpenAIModelProvider
-from app.services.model_gateway.google import GoogleModelProvider
 
 
 def test_factory_creates_mock_provider():
@@ -65,8 +67,6 @@ def test_factory_rejects_openai_when_api_key_is_missing():
 @pytest.mark.parametrize(
     "provider",
     [
-        ModelProvider.HUGGINGFACE,
-        ModelProvider.AZURE_OPENAI,
         ModelProvider.CUSTOM,
     ],
 )
@@ -137,3 +137,41 @@ def test_factory_rejects_google_when_api_key_is_missing():
             match="Google API key is not configured",
         ):
             ModelGatewayFactory.create(model)
+
+
+def test_factory_creates_huggingface_provider():
+    model = SimpleNamespace(
+        provider=ModelProvider.HUGGINGFACE,
+    )
+
+    with patch(
+        "app.services.model_gateway.factory.settings.huggingface_api_key",
+        "test-huggingface-key",
+    ):
+        gateway = ModelGatewayFactory.create(model)
+
+    assert isinstance(gateway, HuggingFaceModelProvider)
+
+
+def test_factory_creates_azure_openai_provider():
+    model = SimpleNamespace(
+        provider=ModelProvider.AZURE_OPENAI,
+    )
+
+    with (
+        patch(
+            "app.services.model_gateway.factory.settings.azure_openai_api_key",
+            "test-azure-key",
+        ),
+        patch(
+            "app.services.model_gateway.factory.settings.azure_openai_endpoint",
+            "https://test.openai.azure.com/",
+        ),
+        patch(
+            "app.services.model_gateway.factory.settings.azure_openai_api_version",
+            "2024-10-21",
+        ),
+    ):
+        gateway = ModelGatewayFactory.create(model)
+
+    assert isinstance(gateway, AzureOpenAIModelProvider)
