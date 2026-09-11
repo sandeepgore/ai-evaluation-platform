@@ -6,6 +6,8 @@ from app.services.model_gateway.ollama import OllamaModelProvider
 from app.services.model_gateway.openai import OpenAIModelProvider
 from app.services.model_gateway.anthropic import AnthropicModelProvider
 from app.services.model_gateway.google import GoogleModelProvider
+from app.services.model_gateway.huggingface import HuggingFaceModelProvider
+from app.services.model_gateway.azure_openai import AzureOpenAIModelProvider
 
 
 class ModelGatewayFactory:
@@ -33,10 +35,16 @@ class ModelGatewayFactory:
             )
 
         if model.provider == ModelProvider.HUGGINGFACE:
-            raise ValueError("Hugging Face model provider is not implemented yet.")
+            return HuggingFaceModelProvider(
+                api_key=settings.huggingface_api_key,
+            )
 
         if model.provider == ModelProvider.AZURE_OPENAI:
-            raise ValueError("Azure OpenAI model provider is not implemented yet.")
+            return AzureOpenAIModelProvider(
+                api_key=settings.azure_openai_api_key,
+                endpoint=settings.azure_openai_endpoint,
+                api_version=settings.azure_openai_api_version,
+            )
 
         if model.provider == ModelProvider.CUSTOM:
             raise ValueError("Custom model providers are not supported yet.")

@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     google_api_key: str | None = None
+    huggingface_api_key: str | None = None
+
+    azure_openai_api_key: str | None = None
+    azure_openai_endpoint: str | None = None
+    azure_openai_api_version: str | None = None
 
     # ------------------------------------------------------------------
     # Prompt guardrails
