@@ -14,6 +14,7 @@ from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
 from app.models.dataset_case import DatasetCase
 from app.models.model import Model
+from app.models.experiment import Experiment, ExperimentSnapshot
 
 config = context.config
 
