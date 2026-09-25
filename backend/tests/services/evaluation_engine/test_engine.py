@@ -2651,6 +2651,168 @@ async def test_engine_does_not_call_model_when_no_evaluator_is_applicable(
 
 
 @pytest.mark.asyncio
+async def test_engine_batch_skips_not_applicable_cases_and_preserves_result_mapping(
+    monkeypatch,
+):
+    model = create_model()
+
+    case_1 = create_case(
+        "question 1",
+        "answer 1",
+        has_reference=True,
+    )
+    case_2 = create_case(
+        "question 2",
+        None,
+        has_reference=False,
+    )
+    case_3 = create_case(
+        "question 3",
+        "answer 3",
+        has_reference=True,
+    )
+    case_4 = create_case(
+        "question 4",
+        None,
+        has_reference=False,
+    )
+
+    cases = [case_1, case_2, case_3, case_4]
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="batch",
+        batch_size=10,
+    )
+
+    run.configuration["evaluators"] = [
+        {
+            "name": "exact_match",
+            "weight": 1.0,
+        }
+    ]
+
+    run.configuration["data_policy"] = {
+        "type": "partial",
+    }
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+
+    model_gateway.generate_batch = AsyncMock(
+        return_value=[
+            create_response("answer 1"),
+            create_response("answer 3"),
+        ]
+    )
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=cases),
+    )
+
+    mock_dataset_capabilities(
+        monkeypatch,
+        cases,
+    )
+
+    evaluation_result_create = AsyncMock(
+        return_value=SimpleNamespace(
+            id=uuid4(),
+            feedback=None,
+        )
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        evaluation_result_create,
+    )
+
+    result = await engine.execute(run.id)
+
+    assert result.status == EvaluationRunStatus.COMPLETED
+    assert result.total_cases == 4
+    assert result.completed_cases == 4
+    assert result.failed_cases == 0
+
+    model_gateway.generate.assert_not_awaited()
+
+    model_gateway.generate_batch.assert_awaited_once_with(
+        prompts=[
+            "question 1",
+            "question 3",
+        ],
+        configuration={
+            "execution_mode": "batch",
+            "batch_size": 10,
+            "evaluators": [
+                {
+                    "name": "exact_match",
+                    "weight": 1.0,
+                }
+            ],
+            "scoring": {
+                "weights": {
+                    "exact_match": 0.5,
+                    "f1": 0.5,
+                }
+            },
+            "data_policy": {
+                "type": "partial",
+            },
+            "model": "mock-model",
+        },
+    )
+
+    assert evaluation_result_create.await_count == 4
+
+    saved_results = [call.kwargs for call in evaluation_result_create.call_args_list]
+
+    results_by_case_id = {
+        saved_result["dataset_case_id"]: saved_result for saved_result in saved_results
+    }
+
+    assert results_by_case_id[case_1.id]["actual_output"] == "answer 1"
+    assert results_by_case_id[case_1.id]["scores"]["exact_match"]["status"] == ("completed")
+
+    assert results_by_case_id[case_2.id]["actual_output"] is None
+    assert results_by_case_id[case_2.id]["scores"]["exact_match"]["status"] == ("not_applicable")
+    assert results_by_case_id[case_2.id]["scores"]["exact_match"]["score"] is None
+    assert results_by_case_id[case_2.id]["scores"]["overall"]["status"] == ("not_applicable")
+
+    assert results_by_case_id[case_3.id]["actual_output"] == "answer 3"
+    assert results_by_case_id[case_3.id]["scores"]["exact_match"]["status"] == ("completed")
+
+    assert results_by_case_id[case_4.id]["actual_output"] is None
+    assert results_by_case_id[case_4.id]["scores"]["exact_match"]["status"] == ("not_applicable")
+    assert results_by_case_id[case_4.id]["scores"]["exact_match"]["score"] is None
+    assert results_by_case_id[case_4.id]["scores"]["overall"]["status"] == ("not_applicable")
+
+    assert scoring_service.calculate.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_engine_resolves_prompt_for_batch_cases(monkeypatch):
     model = create_model()
 

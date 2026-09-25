@@ -55,6 +55,7 @@ class EvaluationSummary(TimestampMixin, Base):
     overall_score: Mapped[float] = mapped_column(
         nullable=False,
         default=0.0,
+        server_default="0",
     )
 
     metrics: Mapped[dict[str, Any]] = mapped_column(

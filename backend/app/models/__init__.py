@@ -12,6 +12,7 @@ from app.models.model import (
 )
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
 from app.models.evaluation_result import EvaluationResult
+from app.models.experiment import Experiment, ExperimentSnapshot
 
 __all__ = [
     "Organization",
@@ -29,4 +30,6 @@ __all__ = [
     "EvaluationRun",
     "EvaluationRunStatus",
     "EvaluationResult",
+    "Experiment",
+    "ExperimentSnapshot",
 ]

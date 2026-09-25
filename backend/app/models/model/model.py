@@ -94,18 +94,21 @@ class Model(TimestampMixin, Base):
         Float,
         nullable=False,
         default=0.0,
+        server_default="0",
     )
 
     output_price_per_million: Mapped[float] = mapped_column(
         Float,
         nullable=False,
         default=0.0,
+        server_default="0",
     )
 
     pricing_currency: Mapped[str] = mapped_column(
         String(10),
         nullable=False,
         default="USD",
+        server_default="USD",
     )
 
     is_active: Mapped[bool] = mapped_column(
