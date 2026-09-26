@@ -9,9 +9,11 @@ from app.api.v1.evaluation import router as evaluation_router
 from app.api.v1.evaluation_results import router as evaluation_results_router
 from app.api.v1.evaluators.evaluators import router as evaluators_router
 from app.api.v1.experiments import router as experiments_router
+from app.api.v1.organizations import router as organizations_router
 
 api_router = APIRouter(prefix="/api/v1")
 
+api_router.include_router(organizations_router)
 api_router.include_router(projects_router)
 api_router.include_router(models_router)
 api_router.include_router(datasets_router)
