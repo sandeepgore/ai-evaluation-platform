@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { ModelListPage } from "../features/models/ModelListPage";
 import { OrganizationListPage } from "../features/organizations/OrganizationListPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
 
@@ -19,7 +20,7 @@ export function AppRoutes() {
           path="/datasets"
           element={<PlaceholderPage title="Datasets" />}
         />
-        <Route path="/models" element={<PlaceholderPage title="Models" />} />
+        <Route path="/models" element={<ModelListPage />} />
         <Route
           path="/evaluations"
           element={<PlaceholderPage title="Evaluations" />}
