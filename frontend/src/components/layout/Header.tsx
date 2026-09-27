@@ -10,6 +10,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useLocation } from "react-router-dom";
+import { useOrganizations } from "../../features/organizations/hooks";
+import { useAppContextStore } from "../../store/appContextStore";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -28,6 +30,16 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
   const location = useLocation();
   const title = pageTitles[location.pathname] ?? "AI Evaluation Platform";
+
+  const { data: organizations = [] } = useOrganizations();
+
+  const selectedOrganizationId = useAppContextStore(
+    (state) => state.selectedOrganizationId,
+  );
+
+  const selectedOrganization = organizations.find(
+    (organization) => organization.id === selectedOrganizationId,
+  );
 
   return (
     <AppBar
@@ -60,6 +72,24 @@ export function Header({ onMenuClick }: HeaderProps) {
         >
           {title}
         </Typography>
+
+        <Box
+          sx={{
+            display: { xs: "none", sm: "block" },
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            Organization:{" "}
+            <Typography
+              component="span"
+              variant="body2"
+              color="text.primary"
+              sx={{ fontWeight: 600 }}
+            >
+              {selectedOrganization?.name ?? "None"}
+            </Typography>
+          </Typography>
+        </Box>
 
         <Box>
           <IconButton aria-label="account">

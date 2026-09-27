@@ -4,6 +4,7 @@ import { Outlet } from "react-router-dom";
 import { Header } from "./Header";
 import { PageContainer } from "./PageContainer";
 import { Sidebar } from "./Sidebar";
+import { OrganizationContextInitializer } from "../context/OrganizationContextInitializer";
 
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -20,6 +21,7 @@ export function AppShell() {
         bgcolor: "background.default",
       }}
     >
+      <OrganizationContextInitializer />
       <Sidebar
         mobileOpen={mobileOpen}
         onMobileClose={handleMobileClose}
