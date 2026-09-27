@@ -1,9 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
-  FormControlLabel,
   Stack,
-  Switch,
   TextField,
 } from "@mui/material";
 import { useEffect } from "react";
@@ -21,7 +19,6 @@ const organizationFormSchema = z.object({
     .min(1, "Slug is required")
     .max(100, "Slug must be 100 characters or fewer"),
   description: z.string(),
-  is_active: z.boolean(),
 });
 
 type OrganizationFormValues = z.infer<typeof organizationFormSchema>;
@@ -48,15 +45,12 @@ export function OrganizationForm({
     handleSubmit,
     reset,
     formState: { errors },
-    setValue,
-    watch,
   } = useForm<OrganizationFormValues>({
     resolver: zodResolver(organizationFormSchema),
     defaultValues: {
       name: organization?.name ?? "",
       slug: organization?.slug ?? "",
       description: organization?.description ?? "",
-      is_active: organization?.is_active ?? true,
     },
   });
 
@@ -65,11 +59,8 @@ export function OrganizationForm({
       name: organization?.name ?? "",
       slug: organization?.slug ?? "",
       description: organization?.description ?? "",
-      is_active: organization?.is_active ?? true,
     });
   }, [organization, reset]);
-
-  const isActive = watch("is_active");
 
   return (
     <Stack
@@ -105,23 +96,6 @@ export function OrganizationForm({
         helperText={errors.description?.message}
         disabled={submitting}
       />
-
-      {isEdit && (
-        <FormControlLabel
-          control={
-            <Switch
-              checked={isActive}
-              onChange={(event) =>
-                setValue("is_active", event.target.checked, {
-                  shouldDirty: true,
-                })
-              }
-              disabled={submitting}
-            />
-          }
-          label="Active"
-        />
-      )}
 
       <Stack
         direction="row"

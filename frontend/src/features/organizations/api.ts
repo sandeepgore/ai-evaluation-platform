@@ -18,7 +18,6 @@ export interface UpdateOrganizationPayload {
     name?: string | null;
     slug?: string | null;
     description?: string | null;
-    is_active?: boolean | null;
 }
 
 export async function listOrganizations(): Promise<Organization[]> {
@@ -40,7 +39,7 @@ export async function getOrganization(
     organizationId: string,
 ): Promise<Organization> {
     const response = await apiClient.get<Organization>(
-        `/api/v1/organizations/${organizationId}`,
+        `/ api / v1 / organizations / ${organizationId} `,
     );
     return response.data;
 }
@@ -50,7 +49,7 @@ export async function updateOrganization(
     payload: UpdateOrganizationPayload,
 ): Promise<Organization> {
     const response = await apiClient.patch<Organization>(
-        `/api/v1/organizations/${organizationId}`,
+        `/ api / v1 / organizations / ${organizationId} `,
         payload,
     );
     return response.data;
@@ -59,5 +58,5 @@ export async function updateOrganization(
 export async function deleteOrganization(
     organizationId: string,
 ): Promise<void> {
-    await apiClient.delete(`/api/v1/organizations/${organizationId}`);
+    await apiClient.delete(`/ api / v1 / organizations / ${organizationId} `);
 }

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization.organization import Organization
+from app.models.project.project import Project
 from app.schemas.organization.organization import (
     OrganizationCreate,
     OrganizationUpdate,
@@ -74,6 +75,15 @@ class OrganizationService:
         self,
         organization: Organization,
     ) -> None:
+        result = await self.db.execute(
+            select(Project.id).where(
+                Project.organization_id == organization.id,
+            )
+        )
+
+        if result.scalar_one_or_none() is not None:
+            raise ValueError("Cannot delete organization because it has associated projects.")
+
         organization.is_active = False
 
         await self.db.commit()

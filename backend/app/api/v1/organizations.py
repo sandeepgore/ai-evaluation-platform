@@ -111,4 +111,10 @@ async def delete_organization(
             detail="Organization not found",
         )
 
-    await service.delete(organization)
+    try:
+        await service.delete(organization)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
