@@ -65,14 +65,9 @@ async def list_projects(
 ) -> list[ProjectResponse]:
     service = ProjectService(db)
 
-    projects = await service.list_by_organization(
-        organization_id
-    )
+    projects = await service.list_by_organization(organization_id)
 
-    return [
-        ProjectResponse.model_validate(project)
-        for project in projects
-    ]
+    return [ProjectResponse.model_validate(project) for project in projects]
 
 
 @router.patch(
@@ -117,4 +112,10 @@ async def delete_project(
             detail="Project not found",
         )
 
-    await service.delete(project)
+    try:
+        await service.delete(project)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
