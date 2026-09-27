@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -148,6 +149,10 @@ async def test_delete_organization():
 
     db = AsyncMock()
 
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    db.execute.return_value = result
+
     service = OrganizationService(db)
 
     await service.delete(organization)
@@ -155,3 +160,27 @@ async def test_delete_organization():
     assert organization.is_active is False
     db.delete.assert_not_awaited()
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_organization_rejects_associated_projects():
+    organization = MagicMock()
+    organization.id = uuid.uuid4()
+    organization.is_active = True
+
+    db = AsyncMock()
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = uuid.uuid4()
+    db.execute.return_value = result
+
+    service = OrganizationService(db)
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot delete organization because it has associated projects.",
+    ):
+        await service.delete(organization)
+
+    assert organization.is_active is True
+    db.commit.assert_not_awaited()

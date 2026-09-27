@@ -62,7 +62,6 @@ def test_organization_update_allows_partial_update():
     assert data.name == "Updated Organization"
     assert data.slug is None
     assert data.description is None
-    assert data.is_active is None
 
 
 def test_organization_update_rejects_empty_name():

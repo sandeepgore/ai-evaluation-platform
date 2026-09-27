@@ -58,13 +58,12 @@ describe("OrganizationForm", () => {
         name: "Demo Organization",
         slug: "demo-organization",
         description: "Development organization",
-        is_active: true,
       },
       expect.anything(),
     );
   });
 
-  it("renders edit values and active control", () => {
+  it("renders edit values without active control", () => {
     render(
       <OrganizationForm
         organization={{
@@ -89,7 +88,7 @@ describe("OrganizationForm", () => {
       "Existing description",
     );
 
-    expect(screen.getByRole("switch")).not.toBeChecked();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("button", { name: "Save Changes" }),

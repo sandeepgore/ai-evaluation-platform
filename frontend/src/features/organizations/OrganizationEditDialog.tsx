@@ -34,7 +34,6 @@ export function OrganizationEditDialog({
       name: values.name,
       slug: values.slug,
       description: values.description || null,
-      is_active: values.is_active,
     };
 
     await updateMutation.mutateAsync({

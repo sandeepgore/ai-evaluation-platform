@@ -29,7 +29,7 @@ describe("OrganizationEditDialog", () => {
     mutateAsync.mockReset();
   });
 
-  it("renders the existing organization values", () => {
+  it("renders the existing organization values without active control", () => {
     render(
       <OrganizationEditDialog
         open
@@ -56,7 +56,7 @@ describe("OrganizationEditDialog", () => {
       screen.getByRole("textbox", { name: "Description" }),
     ).toHaveValue("Development organization");
 
-    expect(screen.getByRole("switch")).toBeChecked();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });
 
   it("updates an organization and closes the dialog", async () => {
@@ -68,7 +68,6 @@ describe("OrganizationEditDialog", () => {
       name: "Updated Organization",
       slug: "updated-organization",
       description: "Updated description",
-      is_active: false,
     });
 
     render(
@@ -94,8 +93,6 @@ describe("OrganizationEditDialog", () => {
     await user.clear(descriptionInput);
     await user.type(descriptionInput, "Updated description");
 
-    await user.click(screen.getByRole("switch"));
-
     await user.click(
       screen.getByRole("button", {
         name: "Save Changes",
@@ -109,7 +106,6 @@ describe("OrganizationEditDialog", () => {
           name: "Updated Organization",
           slug: "updated-organization",
           description: "Updated description",
-          is_active: false,
         },
       });
 
