@@ -1,74 +1,95 @@
 import {
-    Card,
-    CardContent,
-    FormControl,
-    InputLabel,
-    MenuItem,
-    Select,
-    Stack,
-    Typography,
+  Card,
+  CardContent,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Typography,
 } from "@mui/material";
 import { useOrganizations } from "../organizations/hooks";
+import { useProjects } from "../projects/hooks";
 import { useAppContextStore } from "../../store/appContextStore";
 
 export function DashboardPage() {
-    const { data: organizations = [] } = useOrganizations();
+  const { data: organizations = [] } = useOrganizations();
 
-    const selectedOrganizationId = useAppContextStore(
-        (state) => state.selectedOrganizationId,
-    );
-    const setSelectedOrganizationId = useAppContextStore(
-        (state) => state.setSelectedOrganizationId,
-    );
+  const selectedOrganizationId = useAppContextStore(
+    (state) => state.selectedOrganizationId,
+  );
+  const selectedProjectId = useAppContextStore(
+    (state) => state.selectedProjectId,
+  );
 
-    return (
-        <Stack spacing={3}>
-            <Stack spacing={0.5}>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                    Dashboard
-                </Typography>
+  const setSelectedOrganizationId = useAppContextStore(
+    (state) => state.setSelectedOrganizationId,
+  );
+  const setSelectedProjectId = useAppContextStore(
+    (state) => state.setSelectedProjectId,
+  );
 
-                <Typography variant="body2" color="text.secondary">
-                    Overview of your AI evaluation workspace.
-                </Typography>
-            </Stack>
+  const { data: projects = [] } = useProjects(selectedOrganizationId);
 
-            <Card>
-                <CardContent>
-                    <Stack spacing={2}>
-                        <Typography variant="h6">
-                            Organization Context
-                        </Typography>
+  return (
+    <Stack spacing={3}>
+      <Stack spacing={0.5}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+          Dashboard
+        </Typography>
 
-                        <FormControl fullWidth>
-                            <InputLabel id="dashboard-organization-label">
-                                Organization
-                            </InputLabel>
+        <Typography variant="body2" color="text.secondary">
+          Overview of your AI evaluation workspace.
+        </Typography>
+      </Stack>
 
-                            <Select
-                                labelId="dashboard-organization-label"
-                                value={selectedOrganizationId ?? ""}
-                                label="Organization"
-                                onChange={(event) => {
-                                    setSelectedOrganizationId(
-                                        event.target.value || null,
-                                    );
-                                }}
-                                disabled={organizations.length === 0}
-                            >
-                                {organizations.map((organization) => (
-                                    <MenuItem
-                                        key={organization.id}
-                                        value={organization.id}
-                                    >
-                                        {organization.name}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Stack>
-                </CardContent>
-            </Card>
-        </Stack>
-    );
+      <Card>
+        <CardContent>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <FormControl fullWidth>
+              <InputLabel id="dashboard-organization-label">
+                Organization
+              </InputLabel>
+              <Select
+                labelId="dashboard-organization-label"
+                value={selectedOrganizationId ?? ""}
+                label="Organization"
+                onChange={(event) => {
+                  setSelectedOrganizationId(event.target.value || null);
+                }}
+                disabled={organizations.length === 0}
+              >
+                {organizations.map((organization) => (
+                  <MenuItem key={organization.id} value={organization.id}>
+                    {organization.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel id="dashboard-project-label">Project</InputLabel>
+              <Select
+                labelId="dashboard-project-label"
+                value={selectedProjectId ?? ""}
+                label="Project"
+                onChange={(event) => {
+                  setSelectedProjectId(event.target.value || null);
+                }}
+                disabled={
+                  selectedOrganizationId === null || projects.length === 0
+                }
+              >
+                {projects.map((project) => (
+                  <MenuItem key={project.id} value={project.id}>
+                    {project.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </CardContent>
+      </Card>
+    </Stack>
+  );
 }

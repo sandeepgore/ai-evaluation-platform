@@ -1,16 +1,8 @@
-import {
-  AccountCircleOutlined,
-  MenuOutlined,
-} from "@mui/icons-material";
-import {
-  AppBar,
-  Box,
-  IconButton,
-  Toolbar,
-  Typography,
-} from "@mui/material";
+import { AccountCircleOutlined, MenuOutlined } from "@mui/icons-material";
+import { AppBar, Box, IconButton, Toolbar, Typography } from "@mui/material";
 import { useLocation } from "react-router-dom";
 import { useOrganizations } from "../../features/organizations/hooks";
+import { useProjects } from "../../features/projects/hooks";
 import { useAppContextStore } from "../../store/appContextStore";
 
 const pageTitles: Record<string, string> = {
@@ -36,9 +28,18 @@ export function Header({ onMenuClick }: HeaderProps) {
   const selectedOrganizationId = useAppContextStore(
     (state) => state.selectedOrganizationId,
   );
+  const selectedProjectId = useAppContextStore(
+    (state) => state.selectedProjectId,
+  );
+
+  const { data: projects = [] } = useProjects(selectedOrganizationId);
 
   const selectedOrganization = organizations.find(
     (organization) => organization.id === selectedOrganizationId,
+  );
+
+  const selectedProject = projects.find(
+    (project) => project.id === selectedProjectId,
   );
 
   return (
@@ -87,6 +88,16 @@ export function Header({ onMenuClick }: HeaderProps) {
               sx={{ fontWeight: 600 }}
             >
               {selectedOrganization?.name ?? "None"}
+            </Typography>
+            {" | "}
+            Project:{" "}
+            <Typography
+              component="span"
+              variant="body2"
+              color="text.primary"
+              sx={{ fontWeight: 600 }}
+            >
+              {selectedProject?.name ?? "None"}
             </Typography>
           </Typography>
         </Box>
