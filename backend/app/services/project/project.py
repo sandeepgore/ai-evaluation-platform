@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.dataset.dataset import Dataset
 from app.models.project.project import Project
 from app.schemas.project.project import ProjectCreate, ProjectUpdate
 
@@ -69,6 +70,16 @@ class ProjectService:
         return project
 
     async def delete(self, project: Project) -> None:
+        result = await self.db.execute(
+            select(Dataset.id).where(
+                Dataset.project_id == project.id,
+                Dataset.is_active.is_(True),
+            )
+        )
+
+        if result.scalar_one_or_none() is not None:
+            raise ValueError("Cannot delete project because it has active datasets.")
+
         project.is_active = False
 
         await self.db.commit()

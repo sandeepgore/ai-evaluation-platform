@@ -145,9 +145,14 @@ async def test_update_project_with_no_fields():
 @pytest.mark.asyncio
 async def test_delete_project():
     project = MagicMock()
+    project.id = uuid4()
     project.is_active = True
 
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+
     db = AsyncMock()
+    db.execute.return_value = result
 
     service = ProjectService(db)
 
@@ -176,3 +181,27 @@ async def test_get_by_id_uses_active_projects_only():
     assert returned == project
 
     db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_project_rejects_active_datasets():
+    project = MagicMock()
+    project.id = uuid4()
+    project.is_active = True
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = uuid4()
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    service = ProjectService(db)
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot delete project because it has active datasets.",
+    ):
+        await service.delete(project)
+
+    assert project.is_active is True
+    db.commit.assert_not_awaited()
