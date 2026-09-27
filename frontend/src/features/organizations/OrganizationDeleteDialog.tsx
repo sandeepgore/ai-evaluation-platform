@@ -1,6 +1,7 @@
 import { ConfirmDialog } from "../../components/common/ConfirmDialog";
+import { useAppContextStore } from "../../store/appContextStore";
 import type { Organization } from "./api";
-import { useDeleteOrganization } from "./hooks";
+import { useDeleteOrganization, useOrganizations } from "./hooks";
 
 interface OrganizationDeleteDialogProps {
   open: boolean;
@@ -14,6 +15,15 @@ export function OrganizationDeleteDialog({
   onClose,
 }: OrganizationDeleteDialogProps) {
   const deleteMutation = useDeleteOrganization();
+  const { data: organizations = [] } = useOrganizations();
+
+  const selectedOrganizationId = useAppContextStore(
+    (state) => state.selectedOrganizationId,
+  );
+
+  const setSelectedOrganizationId = useAppContextStore(
+    (state) => state.setSelectedOrganizationId,
+  );
 
   const handleConfirm = async () => {
     if (!organization) {
@@ -21,6 +31,17 @@ export function OrganizationDeleteDialog({
     }
 
     await deleteMutation.mutateAsync(organization.id);
+
+    if (selectedOrganizationId === organization.id) {
+      const remainingOrganizations = organizations.filter(
+        (item) => item.id !== organization.id,
+      );
+
+      setSelectedOrganizationId(
+        remainingOrganizations[0]?.id ?? null,
+      );
+    }
+
     onClose();
   };
 
