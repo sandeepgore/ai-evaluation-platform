@@ -9,6 +9,17 @@ const mutateAsync = vi.fn();
 vi.mock(
   "../../../features/organizations/hooks",
   () => ({
+    useOrganizations: () => ({
+      data: [
+        {
+          id: "org-1",
+          name: "Demo Organization",
+          slug: "demo-organization",
+          description: "Development organization",
+          is_active: true,
+        },
+      ],
+    }),
     useDeleteOrganization: () => ({
       mutateAsync,
       isPending: false,
