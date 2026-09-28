@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { DatasetListPage } from "../features/datasets/DatasetListPage";
 import { ModelListPage } from "../features/models/ModelListPage";
 import { OrganizationListPage } from "../features/organizations/OrganizationListPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
@@ -16,10 +17,7 @@ export function AppRoutes() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/organizations" element={<OrganizationListPage />} />
         <Route path="/projects" element={<ProjectListPage />} />
-        <Route
-          path="/datasets"
-          element={<PlaceholderPage title="Datasets" />}
-        />
+        <Route path="/datasets" element={<DatasetListPage />} />
         <Route path="/models" element={<ModelListPage />} />
         <Route
           path="/evaluations"

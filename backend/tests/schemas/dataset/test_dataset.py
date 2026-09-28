@@ -85,7 +85,6 @@ def test_dataset_update_allows_partial_update():
     assert data.description == "Updated description"
     assert data.slug is None
     assert data.dataset_type is None
-    assert data.is_active is None
 
 
 @pytest.mark.parametrize(
@@ -98,12 +97,6 @@ def test_dataset_update_rejects_empty_strings(field):
             name="" if field == "name" else None,
             slug="" if field == "slug" else None,
         )
-
-
-def test_dataset_update_allows_is_active():
-    data = DatasetUpdate(is_active=False)
-
-    assert data.is_active is False
 
 
 def test_dataset_update_allows_dataset_type():

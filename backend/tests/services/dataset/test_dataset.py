@@ -213,7 +213,11 @@ async def test_delete_dataset():
     dataset = MagicMock()
     dataset.is_active = True
 
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+
     db = AsyncMock()
+    db.execute.return_value = result
 
     service = DatasetService(db)
 
@@ -225,7 +229,37 @@ async def test_delete_dataset():
     assert dataset.is_active is False
 
     db.delete.assert_not_awaited()
+    db.execute.assert_awaited_once()
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_dataset_rejects_dataset_with_active_version():
+    dataset = MagicMock()
+    dataset.is_active = True
+
+    version_id = uuid4()
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = version_id
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    service = DatasetService(db)
+
+    service.get = AsyncMock(return_value=dataset)
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot delete a dataset that has versions.",
+    ):
+        await service.delete(dataset.id)
+
+    assert dataset.is_active is True
+
+    db.execute.assert_awaited_once()
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
