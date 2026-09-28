@@ -26,7 +26,6 @@ class DatasetUpdate(BaseModel):
     )
     description: str | None = None
     dataset_type: DatasetType | None = None
-    is_active: bool | None = None
 
 
 class DatasetResponse(BaseModel):

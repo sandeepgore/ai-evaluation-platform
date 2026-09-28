@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.dataset_version.dataset_version import DatasetVersionResponse
 from app.db.session import get_db
 from app.schemas.dataset.dataset import (
     DatasetCreate,
@@ -11,6 +10,7 @@ from app.schemas.dataset.dataset import (
     DatasetUpdate,
 )
 from app.schemas.dataset_ingestion.dataset_import import DatasetImportPayload
+from app.schemas.dataset_version.dataset_version import DatasetVersionResponse
 from app.services.dataset.dataset import DatasetService
 from app.services.dataset_ingestion.service import DatasetImportService
 
@@ -132,7 +132,13 @@ async def delete_dataset(
 ):
     service = DatasetService(db)
 
-    deleted = await service.delete(dataset_id)
+    try:
+        deleted = await service.delete(dataset_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
 
     if not deleted:
         raise HTTPException(

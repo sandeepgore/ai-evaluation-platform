@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dataset.dataset import Dataset
 from app.schemas.dataset.dataset import DatasetCreate, DatasetUpdate
+from app.models.dataset_version.version import DatasetVersion
 
 
 class DatasetService:
@@ -88,6 +89,18 @@ class DatasetService:
 
         if dataset is None:
             return False
+
+        version_result = await self.db.execute(
+            select(DatasetVersion.id)
+            .where(
+                DatasetVersion.dataset_id == dataset_id,
+                DatasetVersion.is_active.is_(True),
+            )
+            .limit(1)
+        )
+
+        if version_result.scalar_one_or_none() is not None:
+            raise ValueError("Cannot delete a dataset that has versions.")
 
         dataset.is_active = False
         await self.db.commit()
