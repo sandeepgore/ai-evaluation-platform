@@ -1,0 +1,144 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DatasetVersionFinalizeDialog } from "../../../features/datasetVersions/DatasetVersionFinalizeDialog";
+import type { DatasetVersion } from "../../../features/datasetVersions/api";
+import { useFinalizeDatasetVersion } from "../../../features/datasetVersions/hooks";
+
+vi.mock("../../../features/datasetVersions/hooks", () => ({
+  useFinalizeDatasetVersion: vi.fn(),
+}));
+
+const mockedUseFinalizeDatasetVersion = vi.mocked(useFinalizeDatasetVersion);
+
+const version: DatasetVersion = {
+  id: "version-1",
+  dataset_id: "dataset-1",
+  version: 2,
+  status: "draft",
+  description: "Draft version",
+  case_count: 5,
+  is_active: true,
+};
+
+describe("DatasetVersionFinalizeDialog", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockedUseFinalizeDatasetVersion.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({
+        ...version,
+        status: "ready",
+      }),
+      isPending: false,
+    } as never);
+  });
+
+  it("renders the confirmation dialog", () => {
+    render(
+      <DatasetVersionFinalizeDialog open version={version} onClose={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Finalize Dataset Version" }),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText(
+        "Are you sure you want to finalize version 2? Once finalized, it will be marked as ready.",
+      ),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "Finalize" }),
+    ).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("does not render when closed", () => {
+    render(
+      <DatasetVersionFinalizeDialog
+        open={false}
+        version={version}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Finalize Dataset Version",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders an empty message when version is null", () => {
+    render(
+      <DatasetVersionFinalizeDialog open version={null} onClose={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByRole("dialog", {
+        name: "Finalize Dataset Version",
+      }),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "Finalize" }),
+    ).toBeInTheDocument();
+  });
+
+  it("finalizes the selected version", async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({
+      ...version,
+      status: "ready",
+    });
+    const onClose = vi.fn();
+
+    mockedUseFinalizeDatasetVersion.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as never);
+
+    render(
+      <DatasetVersionFinalizeDialog open version={version} onClose={onClose} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Finalize" }));
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    expect(mutateAsync).toHaveBeenCalledWith("version-1");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onClose when Cancel is clicked", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+
+    render(
+      <DatasetVersionFinalizeDialog open version={version} onClose={onClose} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables actions while finalizing", () => {
+    mockedUseFinalizeDatasetVersion.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: true,
+    } as never);
+
+    render(
+      <DatasetVersionFinalizeDialog open version={version} onClose={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Processing..." }),
+    ).toBeDisabled();
+
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+});

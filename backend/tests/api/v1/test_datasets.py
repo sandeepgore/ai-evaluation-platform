@@ -20,6 +20,13 @@ def create_fake_dataset_version():
         status=DatasetVersionStatus.READY,
         description=None,
         case_count=2,
+        analytics={
+            "case_count": 2,
+            "reference_count": 2,
+            "context_count": 2,
+            "reference_coverage": 1.0,
+            "context_coverage": 1.0,
+        },
         is_active=True,
     )
 

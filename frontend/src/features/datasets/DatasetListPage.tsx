@@ -7,6 +7,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
@@ -19,6 +20,8 @@ import { DatasetTable } from "./DatasetTable";
 import { useDatasets } from "./hooks";
 
 export function DatasetListPage() {
+  const navigate = useNavigate();
+
   const selectedProjectId = useAppContextStore(
     (state) => state.selectedProjectId,
   );
@@ -40,6 +43,10 @@ export function DatasetListPage() {
 
   const handleDelete = (dataset: Dataset) => {
     setDeleteDataset(dataset);
+  };
+
+  const handleViewVersions = (dataset: Dataset) => {
+    navigate(`/datasets/${dataset.id}/versions`);
   };
 
   if (!selectedProjectId) {
@@ -118,6 +125,7 @@ export function DatasetListPage() {
           datasets={data}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onViewVersions={handleViewVersions}
         />
       )}
 

@@ -1,10 +1,11 @@
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.dataset.dataset import Dataset
 from app.models.dataset_case.case import DatasetCase
 from app.models.dataset_version.version import DatasetVersion, DatasetVersionStatus
 from app.schemas.dataset_version import (
@@ -24,12 +25,60 @@ class DatasetVersionService:
         self,
         data: DatasetVersionCreate,
     ) -> DatasetVersion:
-        version = DatasetVersion(**data.model_dump())
-
-        self.db.add(version)
-
         try:
+            dataset_result = await self.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.id == data.dataset_id,
+                    Dataset.is_active.is_(True),
+                )
+                .with_for_update()
+            )
+
+            dataset = dataset_result.scalar_one_or_none()
+
+            if dataset is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dataset not found.",
+                )
+
+            version_result = await self.db.execute(
+                select(
+                    func.coalesce(
+                        func.max(DatasetVersion.version),
+                        0,
+                    )
+                    + 1
+                ).where(
+                    DatasetVersion.dataset_id == data.dataset_id,
+                    DatasetVersion.is_active.is_(True),
+                )
+            )
+
+            next_version = version_result.scalar_one()
+
+            version = DatasetVersion(
+                dataset_id=data.dataset_id,
+                version=next_version,
+                status=DatasetVersionStatus.DRAFT,
+                description=data.description,
+                case_count=0,
+                analytics=None,
+                is_active=True,
+            )
+
+            self.db.add(version)
+
             await self.db.commit()
+            await self.db.refresh(version)
+
+            return version
+
+        except HTTPException:
+            await self.db.rollback()
+            raise
+
         except IntegrityError:
             await self.db.rollback()
             raise HTTPException(
@@ -37,9 +86,9 @@ class DatasetVersionService:
                 detail="This version already exists for this dataset.",
             )
 
-        await self.db.refresh(version)
-
-        return version
+        except Exception:
+            await self.db.rollback()
+            raise
 
     async def list(
         self,
@@ -168,6 +217,21 @@ class DatasetVersionService:
         version_id: UUID,
     ) -> None:
         version = await self.get(version_id)
+
+        case_result = await self.db.execute(
+            select(DatasetCase.id)
+            .where(
+                DatasetCase.dataset_version_id == version_id,
+                DatasetCase.is_active.is_(True),
+            )
+            .limit(1)
+        )
+
+        if case_result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot delete a dataset version that has cases.",
+            )
 
         version.is_active = False
 

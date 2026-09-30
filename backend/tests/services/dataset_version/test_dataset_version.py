@@ -15,13 +15,27 @@ from app.services.dataset_version.dataset_version import DatasetVersionService
 
 @pytest.mark.asyncio
 async def test_create_dataset_version():
+    dataset_id = uuid4()
+
+    dataset = MagicMock()
+    dataset.id = dataset_id
+    dataset.is_active = True
+
+    dataset_result = MagicMock()
+    dataset_result.scalar_one_or_none.return_value = dataset
+
+    version_result = MagicMock()
+    version_result.scalar_one.return_value = 1
+
     db = AsyncMock()
     db.add = MagicMock()
+    db.execute.side_effect = [
+        dataset_result,
+        version_result,
+    ]
 
     data = DatasetVersionCreate(
-        dataset_id=uuid4(),
-        version=1,
-        status=DatasetVersionStatus.DRAFT,
+        dataset_id=dataset_id,
         description="Initial version",
     )
 
@@ -30,9 +44,12 @@ async def test_create_dataset_version():
     version = await service.create(data)
 
     assert version.dataset_id == data.dataset_id
-    assert version.version == data.version
-    assert version.status == data.status
+    assert version.version == 1
+    assert version.status == DatasetVersionStatus.DRAFT
     assert version.description == data.description
+    assert version.case_count == 0
+    assert version.analytics is None
+    assert version.is_active is True
 
     db.add.assert_called_once_with(version)
     db.commit.assert_awaited_once()
@@ -40,30 +57,104 @@ async def test_create_dataset_version():
 
 
 @pytest.mark.asyncio
-async def test_create_dataset_version_rejects_duplicate_version():
+async def test_create_dataset_version_generates_next_version():
+    dataset_id = uuid4()
+
+    dataset = MagicMock()
+    dataset.id = dataset_id
+    dataset.is_active = True
+
+    dataset_result = MagicMock()
+    dataset_result.scalar_one_or_none.return_value = dataset
+
+    version_result = MagicMock()
+    version_result.scalar_one.return_value = 3
+
     db = AsyncMock()
     db.add = MagicMock()
+    db.execute.side_effect = [
+        dataset_result,
+        version_result,
+    ]
 
-    db.commit.side_effect = IntegrityError(
-        "duplicate key",
-        {},
-        Exception("duplicate"),
+    data = DatasetVersionCreate(
+        dataset_id=dataset_id,
+        description="Next version",
     )
+
+    service = DatasetVersionService(db)
+
+    version = await service.create(data)
+
+    assert version.dataset_id == dataset_id
+    assert version.version == 3
+    assert version.status == DatasetVersionStatus.DRAFT
+    assert version.description == "Next version"
+
+    db.add.assert_called_once_with(version)
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(version)
+
+
+@pytest.mark.asyncio
+async def test_create_dataset_version_ignores_inactive_versions():
+    dataset_id = uuid4()
+
+    dataset = MagicMock()
+    dataset.id = dataset_id
+    dataset.is_active = True
+
+    dataset_result = MagicMock()
+    dataset_result.scalar_one_or_none.return_value = dataset
+
+    version_result = MagicMock()
+    version_result.scalar_one.return_value = 3
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.execute.side_effect = [
+        dataset_result,
+        version_result,
+    ]
+
+    data = DatasetVersionCreate(
+        dataset_id=dataset_id,
+        description="Version after inactive version",
+    )
+
+    service = DatasetVersionService(db)
+
+    version = await service.create(data)
+
+    assert version.version == 3
+    assert version.status == DatasetVersionStatus.DRAFT
+    assert version.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_create_dataset_version_raises_404_when_dataset_not_found():
+    dataset_result = MagicMock()
+    dataset_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = dataset_result
 
     data = DatasetVersionCreate(
         dataset_id=uuid4(),
-        version=1,
+        description="Invalid dataset",
     )
 
     service = DatasetVersionService(db)
 
     with pytest.raises(
         HTTPException,
-        match="This version already exists for this dataset.",
+        match="Dataset not found.",
     ):
         await service.create(data)
 
     db.rollback.assert_awaited_once()
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
 
 
@@ -189,6 +280,11 @@ async def test_delete_dataset_version():
 
     db = AsyncMock()
 
+    case_result = MagicMock()
+    case_result.scalar_one_or_none.return_value = None
+
+    db.execute.return_value = case_result
+
     service = DatasetVersionService(db)
 
     service.get = AsyncMock(return_value=version)
@@ -199,6 +295,37 @@ async def test_delete_dataset_version():
 
     db.delete.assert_not_awaited()
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_dataset_version_rejects_version_with_active_cases():
+    version = MagicMock()
+    version.is_active = True
+
+    case = MagicMock()
+    case.id = uuid4()
+
+    version_result = MagicMock()
+    version_result.scalar_one_or_none.return_value = version
+
+    case_result = MagicMock()
+    case_result.scalar_one_or_none.return_value = case.id
+
+    db = AsyncMock()
+    db.execute.return_value = case_result
+
+    service = DatasetVersionService(db)
+
+    service.get = AsyncMock(return_value=version)
+
+    with pytest.raises(
+        HTTPException,
+        match="Cannot delete a dataset version that has cases.",
+    ):
+        await service.delete(version.id)
+
+    assert version.is_active is True
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
