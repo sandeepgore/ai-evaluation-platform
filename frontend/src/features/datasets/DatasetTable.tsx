@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   EditOutlined,
+  FolderOpenOutlined,
 } from "@mui/icons-material";
 import {
   IconButton,
@@ -21,12 +22,14 @@ interface DatasetTableProps {
   datasets: Dataset[];
   onEdit: (dataset: Dataset) => void;
   onDelete: (dataset: Dataset) => void;
+  onViewVersions: (dataset: Dataset) => void;
 }
 
 export function DatasetTable({
   datasets,
   onEdit,
   onDelete,
+  onViewVersions,
 }: DatasetTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
@@ -92,6 +95,16 @@ export function DatasetTable({
               </TableCell>
 
               <TableCell align="right">
+                <Tooltip title="View versions">
+                  <IconButton
+                    aria-label={`View versions for ${dataset.name}`}
+                    onClick={() => onViewVersions(dataset)}
+                    size="small"
+                  >
+                    <FolderOpenOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+
                 <Tooltip title="Edit dataset">
                   <IconButton
                     aria-label={`Edit ${dataset.name}`}

@@ -1,84 +1,58 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DatasetListPage } from "../../../features/datasets/DatasetListPage";
 import type { Dataset } from "../../../features/datasets/api";
-
 const useDatasets = vi.fn();
 const useAppContextStore = vi.fn();
 
-vi.mock(
-  "../../../features/datasets/hooks",
-  () => ({
-    useDatasets: (projectId: string | null) =>
-      useDatasets(projectId),
-  }),
-);
+vi.mock("../../../features/datasets/hooks", () => ({
+  useDatasets: (projectId: string | null) => useDatasets(projectId),
+}));
 
-vi.mock(
-  "../../../store/appContextStore",
-  () => ({
-    useAppContextStore: (selector: (state: unknown) => unknown) =>
-      useAppContextStore(selector),
-  }),
-);
+vi.mock("../../../store/appContextStore", () => ({
+  useAppContextStore: (selector: (state: unknown) => unknown) =>
+    useAppContextStore(selector),
+}));
 
-vi.mock(
-  "../../../features/datasets/DatasetCreateDialog",
-  () => ({
-    DatasetCreateDialog: ({
-      open,
-      projectId,
-    }: {
-      open: boolean;
-      projectId: string;
-      onClose: () => void;
-    }) =>
-      open ? (
-        <div role="dialog">
-          Create Dataset Dialog: {projectId}
-        </div>
-      ) : null,
-  }),
-);
+vi.mock("../../../features/datasets/DatasetCreateDialog", () => ({
+  DatasetCreateDialog: ({
+    open,
+    projectId,
+  }: {
+    open: boolean;
+    projectId: string;
+    onClose: () => void;
+  }) =>
+    open ? <div role="dialog">Create Dataset Dialog: {projectId}</div> : null,
+}));
 
-vi.mock(
-  "../../../features/datasets/DatasetEditDialog",
-  () => ({
-    DatasetEditDialog: ({
-      open,
-      dataset,
-    }: {
-      open: boolean;
-      dataset: Dataset | null;
-      onClose: () => void;
-    }) =>
-      open ? (
-        <div role="dialog">
-          Edit Dataset Dialog: {dataset?.name}
-        </div>
-      ) : null,
-  }),
-);
+vi.mock("../../../features/datasets/DatasetEditDialog", () => ({
+  DatasetEditDialog: ({
+    open,
+    dataset,
+  }: {
+    open: boolean;
+    dataset: Dataset | null;
+    onClose: () => void;
+  }) =>
+    open ? <div role="dialog">Edit Dataset Dialog: {dataset?.name}</div> : null,
+}));
 
-vi.mock(
-  "../../../features/datasets/DatasetDeleteDialog",
-  () => ({
-    DatasetDeleteDialog: ({
-      open,
-      dataset,
-    }: {
-      open: boolean;
-      dataset: Dataset | null;
-      onClose: () => void;
-    }) =>
-      open ? (
-        <div role="dialog">
-          Delete Dataset Dialog: {dataset?.name}
-        </div>
-      ) : null,
-  }),
-);
+vi.mock("../../../features/datasets/DatasetDeleteDialog", () => ({
+  DatasetDeleteDialog: ({
+    open,
+    dataset,
+  }: {
+    open: boolean;
+    dataset: Dataset | null;
+    onClose: () => void;
+  }) =>
+    open ? (
+      <div role="dialog">Delete Dataset Dialog: {dataset?.name}</div>
+    ) : null,
+}));
 
 const datasets: Dataset[] = [
   {
@@ -119,7 +93,11 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText("No project selected")).toBeInTheDocument();
     expect(
@@ -136,7 +114,11 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText("Loading datasets...")).toBeInTheDocument();
   });
@@ -148,11 +130,13 @@ describe("DatasetListPage", () => {
       isError: true,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
-    expect(
-      screen.getByText("Unable to load datasets."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Unable to load datasets.")).toBeInTheDocument();
   });
 
   it("renders the empty state", () => {
@@ -162,7 +146,11 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText("No datasets yet")).toBeInTheDocument();
     expect(
@@ -179,7 +167,11 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText("RAG Evaluation")).toBeInTheDocument();
     expect(screen.getByText("rag-evaluation")).toBeInTheDocument();
@@ -194,11 +186,13 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
-
-    await user.click(
-      screen.getByRole("button", { name: "Create Dataset" }),
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
     );
+
+    await user.click(screen.getByRole("button", { name: "Create Dataset" }));
 
     expect(
       screen.getByText("Create Dataset Dialog: project-1"),
@@ -214,7 +208,11 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
     await user.click(
       screen.getByRole("button", { name: "Edit RAG Evaluation" }),
@@ -234,7 +232,11 @@ describe("DatasetListPage", () => {
       isError: false,
     });
 
-    render(<DatasetListPage />);
+    render(
+      <MemoryRouter>
+        <DatasetListPage />
+      </MemoryRouter>,
+    );
 
     await user.click(
       screen.getByRole("button", { name: "Delete RAG Evaluation" }),
