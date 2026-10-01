@@ -1,10 +1,5 @@
 import {
-  CheckCircleOutlineOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  VisibilityOutlined,
-} from "@mui/icons-material";
-import {
+  Box,
   IconButton,
   Paper,
   Stack,
@@ -25,6 +20,7 @@ interface DatasetVersionTableProps {
   onEdit: (version: DatasetVersion) => void;
   onDelete: (version: DatasetVersion) => void;
   onFinalize: (version: DatasetVersion) => void;
+  onViewCases: (version: DatasetVersion) => void;
   onView: (version: DatasetVersion) => void;
 }
 
@@ -33,6 +29,7 @@ export function DatasetVersionTable({
   onEdit,
   onDelete,
   onFinalize,
+  onViewCases,
   onView,
 }: DatasetVersionTableProps) {
   return (
@@ -44,7 +41,8 @@ export function DatasetVersionTable({
             <TableCell>Status</TableCell>
             <TableCell>Description</TableCell>
             <TableCell>Cases</TableCell>
-            <TableCell>Analytics</TableCell>
+            <TableCell>Data Coverage</TableCell>
+            <TableCell>Workflow</TableCell>
             <TableCell align="right">Actions</TableCell>
           </TableRow>
         </TableHead>
@@ -104,44 +102,100 @@ export function DatasetVersionTable({
                 )}
               </TableCell>
 
+              <TableCell>
+                <Stack direction="row" spacing={0.5}>
+                  <Tooltip title="View evaluation cases in this dataset version">
+                    <IconButton
+                      aria-label={`View cases for version ${version.version}`}
+                      onClick={() => onViewCases(version)}
+                      size="small"
+                    >
+                      <Box
+                        component="img"
+                        src="/svg/cases.svg"
+                        alt=""
+                        sx={{
+                          width: 24,
+                          height: 24,
+                        }}
+                      />
+                    </IconButton>
+                  </Tooltip>
+
+                  {version.status === "draft" && (
+                    <Tooltip
+                      title={
+                        version.case_count === 0
+                          ? "Add at least one case before finalizing — finalized versions are used for evaluation"
+                          : "Finalize version — makes it ready for evaluation"
+                      }
+                    >
+                      <span>
+                        <IconButton
+                          aria-label={`Finalize version ${version.version}`}
+                          onClick={() => onFinalize(version)}
+                          size="small"
+                          disabled={version.case_count === 0}
+                        >
+                          <Box
+                            component="img"
+                            src="/svg/finalize.svg"
+                            alt=""
+                            sx={{
+                              width: 24,
+                              height: 24,
+                              opacity: version.case_count === 0 ? 0.4 : 1,
+                            }}
+                          />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  )}
+                </Stack>
+              </TableCell>
+
               <TableCell align="right">
-                <Tooltip title="View version">
+                <Tooltip title="View dataset version details">
                   <IconButton
                     aria-label={`View version ${version.version}`}
                     onClick={() => onView(version)}
                     size="small"
                   >
-                    <VisibilityOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/view.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
 
-                <Tooltip title="Edit version">
+                <Tooltip title="Edit dataset version description">
                   <IconButton
                     aria-label={`Edit version ${version.version}`}
                     onClick={() => onEdit(version)}
                     size="small"
                   >
-                    <EditOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/edit.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
-
-                {version.status === "draft" && (
-                  <Tooltip title="Finalize version">
-                    <IconButton
-                      aria-label={`Finalize version ${version.version}`}
-                      onClick={() => onFinalize(version)}
-                      size="small"
-                    >
-                      <CheckCircleOutlineOutlined fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
 
                 <Tooltip
                   title={
                     version.case_count > 0
-                      ? "Cannot delete a version that has cases"
-                      : "Delete version"
+                      ? "Cannot delete a version that contains cases"
+                      : "Delete dataset version"
                   }
                 >
                   <span>
@@ -149,10 +203,18 @@ export function DatasetVersionTable({
                       aria-label={`Delete version ${version.version}`}
                       onClick={() => onDelete(version)}
                       size="small"
-                      color="error"
                       disabled={version.case_count > 0}
                     >
-                      <DeleteOutlined fontSize="small" />
+                      <Box
+                        component="img"
+                        src="/svg/delete.svg"
+                        alt=""
+                        sx={{
+                          width: 24,
+                          height: 24,
+                          opacity: version.case_count > 0 ? 0.4 : 1,
+                        }}
+                      />
                     </IconButton>
                   </span>
                 </Tooltip>

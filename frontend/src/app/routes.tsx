@@ -7,6 +7,7 @@ import { OrganizationListPage } from "../features/organizations/OrganizationList
 import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { DatasetVersionListPage } from "../features/datasetVersions/DatasetVersionListPage";
 import { DatasetVersionDetailPage } from "../features/datasetVersions/DatasetVersionDetailPage";
+import { DatasetCaseListPage } from "../features/datasetCases/DatasetCaseListPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return <h1>{title}</h1>;
@@ -27,6 +28,10 @@ export function AppRoutes() {
         <Route
           path="/datasets/:datasetId/versions/:versionId"
           element={<DatasetVersionDetailPage />}
+        />
+        <Route
+          path="/datasets/:datasetId/versions/:versionId/cases"
+          element={<DatasetCaseListPage />}
         />
         <Route path="/models" element={<ModelListPage />} />
         <Route

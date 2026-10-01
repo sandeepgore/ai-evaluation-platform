@@ -186,10 +186,22 @@ export function DatasetVersionImportDialog({
 
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            Upload a JSON file containing dataset cases. A new ready version
-            will be created automatically.
-          </Typography>
+          <Stack spacing={0.75}>
+            <Typography variant="body2" color="text.secondary">
+              Upload a JSON file containing dataset cases. A new ready version
+              will be created automatically.
+            </Typography>
+
+            <Button
+              component="a"
+              href="/examples/dataset-import-sample.json"
+              download="dataset-import-sample.json"
+              variant="text"
+              sx={{ alignSelf: "flex-start", px: 0 }}
+            >
+              Download Sample JSON
+            </Button>
+          </Stack>
 
           <Button
             variant="outlined"

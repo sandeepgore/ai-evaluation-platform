@@ -1,8 +1,5 @@
 import {
-  DeleteOutlined,
-  EditOutlined,
-} from "@mui/icons-material";
-import {
+  Box,
   IconButton,
   Paper,
   Table,
@@ -59,10 +56,7 @@ export function ProjectTable({
               </TableCell>
 
               <TableCell>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
+                <Typography variant="body2" color="text.secondary">
                   {project.slug}
                 </Typography>
               </TableCell>
@@ -71,9 +65,7 @@ export function ProjectTable({
                 <Typography
                   variant="body2"
                   color={
-                    project.description
-                      ? "text.primary"
-                      : "text.secondary"
+                    project.description ? "text.primary" : "text.secondary"
                   }
                 >
                   {project.description ?? "No description"}
@@ -91,7 +83,15 @@ export function ProjectTable({
                     onClick={() => onEdit(project)}
                     size="small"
                   >
-                    <EditOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/edit.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
 
@@ -100,9 +100,16 @@ export function ProjectTable({
                     aria-label={`Delete ${project.name}`}
                     onClick={() => onDelete(project)}
                     size="small"
-                    color="error"
                   >
-                    <DeleteOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/delete.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
               </TableCell>

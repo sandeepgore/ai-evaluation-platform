@@ -3,6 +3,7 @@ import { CssBaseline, ThemeProvider } from "@mui/material";
 import { BrowserRouter } from "react-router-dom";
 import { appTheme } from "./theme";
 import { AppRoutes } from "./routes";
+import { NotificationProvider } from "../components/common/NotificationProvider";
 
 const queryClient = new QueryClient();
 
@@ -12,7 +13,9 @@ export function App() {
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
         <BrowserRouter>
-          <AppRoutes />
+          <NotificationProvider>
+            <AppRoutes />
+          </NotificationProvider>
         </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>

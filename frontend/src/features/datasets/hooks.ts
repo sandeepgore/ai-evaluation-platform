@@ -12,6 +12,7 @@ import {
     type CreateDatasetPayload,
     type UpdateDatasetPayload,
 } from "./api";
+import { useNotification } from "../../components/common/NotificationProvider";
 
 const datasetKeys = {
     all: ["datasets"] as const,
@@ -43,20 +44,29 @@ export function useDataset(datasetId: string | null) {
 
 export function useCreateDataset() {
     const queryClient = useQueryClient();
+    const { notify } = useNotification();
 
     return useMutation({
         mutationFn: (payload: CreateDatasetPayload) =>
             createDataset(payload),
+
         onSuccess: (dataset) => {
             void queryClient.invalidateQueries({
                 queryKey: datasetKeys.list(dataset.project_id),
             });
+        },
+
+        onError: (error) => {
+            if (error instanceof Error) {
+                notify(error.message, "error");
+            }
         },
     });
 }
 
 export function useUpdateDataset() {
     const queryClient = useQueryClient();
+    const { notify } = useNotification();
 
     return useMutation({
         mutationFn: ({
@@ -66,6 +76,7 @@ export function useUpdateDataset() {
             datasetId: string;
             payload: UpdateDatasetPayload;
         }) => updateDataset(datasetId, payload),
+
         onSuccess: (dataset) => {
             queryClient.setQueryData(
                 datasetKeys.detail(dataset.id),
@@ -76,15 +87,23 @@ export function useUpdateDataset() {
                 queryKey: datasetKeys.list(dataset.project_id),
             });
         },
+
+        onError: (error) => {
+            if (error instanceof Error) {
+                notify(error.message, "error");
+            }
+        },
     });
 }
 
 export function useDeleteDataset() {
     const queryClient = useQueryClient();
+    const { notify } = useNotification();
 
     return useMutation({
         mutationFn: (datasetId: string) =>
             deleteDataset(datasetId),
+
         onSuccess: (_data, datasetId) => {
             queryClient.removeQueries({
                 queryKey: datasetKeys.detail(datasetId),
@@ -93,6 +112,12 @@ export function useDeleteDataset() {
             void queryClient.invalidateQueries({
                 queryKey: datasetKeys.all,
             });
+        },
+
+        onError: (error) => {
+            if (error instanceof Error) {
+                notify(error.message, "error");
+            }
         },
     });
 }

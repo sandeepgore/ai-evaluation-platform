@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface AppContextState {
     selectedOrganizationId: string | null;
@@ -9,23 +10,30 @@ interface AppContextState {
     clearProject: () => void;
 }
 
-export const useAppContextStore = create<AppContextState>((set) => ({
-    selectedOrganizationId: null,
-    selectedProjectId: null,
-
-    setSelectedOrganizationId: (organizationId) =>
-        set({
-            selectedOrganizationId: organizationId,
+export const useAppContextStore = create<AppContextState>()(
+    persist(
+        (set) => ({
+            selectedOrganizationId: null,
             selectedProjectId: null,
-        }),
 
-    setSelectedProjectId: (projectId) =>
-        set({
-            selectedProjectId: projectId,
-        }),
+            setSelectedOrganizationId: (organizationId) =>
+                set({
+                    selectedOrganizationId: organizationId,
+                    selectedProjectId: null,
+                }),
 
-    clearProject: () =>
-        set({
-            selectedProjectId: null,
+            setSelectedProjectId: (projectId) =>
+                set({
+                    selectedProjectId: projectId,
+                }),
+
+            clearProject: () =>
+                set({
+                    selectedProjectId: null,
+                }),
         }),
-}));
+        {
+            name: "ai-evaluation-app-context",
+        },
+    ),
+);

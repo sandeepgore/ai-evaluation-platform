@@ -21,7 +21,7 @@ const statusConfig: Record<
 > = {
   draft: {
     label: "Draft",
-    color: "default",
+    color: "primary",
   },
   ready: {
     label: "Ready",
@@ -43,7 +43,7 @@ export function DatasetVersionStatusChip({
       size="small"
       label={config.label}
       color={config.color}
-      variant={status === "draft" ? "outlined" : "filled"}
+      variant="filled"
     />
   );
 }
