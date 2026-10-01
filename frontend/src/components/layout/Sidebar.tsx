@@ -75,17 +75,36 @@ function SidebarContent() {
       }}
     >
       <Box sx={{ px: 2.5, py: 2.5 }}>
-        <Typography variant="h6" sx={{ fontWeight: 700 }}>
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: 700,
+            letterSpacing: "-0.02em",
+            color: "text.primary",
+          }}
+        >
           AI Evaluation
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            mt: 0.25,
+          }}
+        >
           Platform
         </Typography>
       </Box>
 
       <Divider />
 
-      <List sx={{ px: 1, py: 1 }}>
+      <List
+        sx={{
+          px: 1.25,
+          py: 1.5,
+        }}
+      >
         {navigationItems.map((item) => (
           <ListItemButton
             key={item.path}
@@ -93,20 +112,55 @@ function SidebarContent() {
             to={item.path}
             end={item.path === "/"}
             sx={{
-              borderRadius: 1.5,
+              minHeight: 44,
+              borderRadius: 2,
               mb: 0.5,
+              px: 1.5,
+              color: "text.secondary",
+              transition: "background-color 120ms ease, color 120ms ease",
+
+              "&:hover": {
+                bgcolor: "action.hover",
+                color: "text.primary",
+              },
+
               "&.active": {
-                bgcolor: "primary.main",
-                color: "primary.contrastText",
+                bgcolor: "primary.50",
+                color: "primary.main",
+                fontWeight: 600,
+
                 "& .MuiListItemIcon-root": {
-                  color: "inherit",
+                  color: "primary.main",
+                },
+
+                "&:hover": {
+                  bgcolor: "primary.100",
                 },
               },
             }}
           >
-            <ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
+            <ListItemIcon
+              sx={{
+                minWidth: 40,
+                color: "inherit",
+              }}
+            >
+              {item.icon}
+            </ListItemIcon>
 
-            <ListItemText primary={item.label} />
+            <ListItemText
+              primary={
+                <Typography
+                  component="span"
+                  sx={{
+                    fontSize: 14,
+                    fontWeight: "inherit",
+                  }}
+                >
+                  {item.label}
+                </Typography>
+              }
+            />
           </ListItemButton>
         ))}
       </List>
@@ -133,6 +187,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             borderRight: 1,
             borderColor: "divider",
             bgcolor: "background.paper",
+            boxShadow: "1px 0 3px rgba(15, 23, 42, 0.04)",
           }}
         >
           <SidebarContent />
@@ -150,6 +205,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           display: { xs: "block", lg: "none" },
           "& .MuiDrawer-paper": {
             width: drawerWidth,
+            bgcolor: "background.paper",
           },
         }}
       >

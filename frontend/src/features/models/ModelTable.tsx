@@ -1,8 +1,5 @@
 import {
-  DeleteOutlined,
-  EditOutlined,
-} from "@mui/icons-material";
-import {
+  Box,
   IconButton,
   Paper,
   Table,
@@ -42,11 +39,7 @@ const modelTypeLabels: Record<Model["model_type"], string> = {
   custom: "Custom",
 };
 
-export function ModelTable({
-  models,
-  onEdit,
-  onDelete,
-}: ModelTableProps) {
+export function ModelTable({ models, onEdit, onDelete }: ModelTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table>
@@ -86,10 +79,7 @@ export function ModelTable({
               </TableCell>
 
               <TableCell>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
+                <Typography variant="body2" color="text.secondary">
                   {model.model_identifier}
                 </Typography>
               </TableCell>
@@ -102,14 +92,10 @@ export function ModelTable({
 
               <TableCell>
                 <Typography variant="body2">
-                  {model.pricing_currency}{" "}
-                  {model.input_price_per_million} /{" "}
+                  {model.pricing_currency} {model.input_price_per_million} /{" "}
                   {model.output_price_per_million}
                 </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                >
+                <Typography variant="caption" color="text.secondary">
                   input / output per 1M
                 </Typography>
               </TableCell>
@@ -125,7 +111,15 @@ export function ModelTable({
                     onClick={() => onEdit(model)}
                     size="small"
                   >
-                    <EditOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/edit.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
 
@@ -134,9 +128,16 @@ export function ModelTable({
                     aria-label={`Delete ${model.name}`}
                     onClick={() => onDelete(model)}
                     size="small"
-                    color="error"
                   >
-                    <DeleteOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/delete.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
               </TableCell>

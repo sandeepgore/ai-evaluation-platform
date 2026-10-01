@@ -26,5 +26,7 @@ class DatasetCaseResponse(BaseModel):
     input: str
     expected_output: str | None
     case_metadata: dict[str, Any] | None
+    has_reference: bool
+    has_context: bool
     position: int
     is_active: bool

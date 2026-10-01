@@ -12,6 +12,7 @@ import {
     type CreateOrganizationPayload,
     type UpdateOrganizationPayload,
 } from "./api";
+import { useNotification } from "../../components/common/NotificationProvider";
 
 const organizationKeys = {
     all: ["organizations"] as const,
@@ -38,20 +39,29 @@ export function useOrganization(organizationId: string | null) {
 
 export function useCreateOrganization() {
     const queryClient = useQueryClient();
+    const { notify } = useNotification();
 
     return useMutation({
         mutationFn: (payload: CreateOrganizationPayload) =>
             createOrganization(payload),
+
         onSuccess: () => {
             void queryClient.invalidateQueries({
                 queryKey: organizationKeys.all,
             });
+        },
+
+        onError: (error) => {
+            if (error instanceof Error) {
+                notify(error.message, "error");
+            }
         },
     });
 }
 
 export function useUpdateOrganization() {
     const queryClient = useQueryClient();
+    const { notify } = useNotification();
 
     return useMutation({
         mutationFn: ({
@@ -61,6 +71,7 @@ export function useUpdateOrganization() {
             organizationId: string;
             payload: UpdateOrganizationPayload;
         }) => updateOrganization(organizationId, payload),
+
         onSuccess: (organization) => {
             queryClient.setQueryData(
                 organizationKeys.detail(organization.id),
@@ -71,15 +82,23 @@ export function useUpdateOrganization() {
                 queryKey: organizationKeys.all,
             });
         },
+
+        onError: (error) => {
+            if (error instanceof Error) {
+                notify(error.message, "error");
+            }
+        },
     });
 }
 
 export function useDeleteOrganization() {
     const queryClient = useQueryClient();
+    const { notify } = useNotification();
 
     return useMutation({
         mutationFn: (organizationId: string) =>
             deleteOrganization(organizationId),
+
         onSuccess: (_data, organizationId) => {
             queryClient.removeQueries({
                 queryKey: organizationKeys.detail(organizationId),
@@ -88,6 +107,12 @@ export function useDeleteOrganization() {
             void queryClient.invalidateQueries({
                 queryKey: organizationKeys.all,
             });
+        },
+
+        onError: (error) => {
+            if (error instanceof Error) {
+                notify(error.message, "error");
+            }
         },
     });
 }

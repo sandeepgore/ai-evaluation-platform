@@ -1,5 +1,12 @@
 import { AccountCircleOutlined, MenuOutlined } from "@mui/icons-material";
-import { AppBar, Box, IconButton, Toolbar, Typography } from "@mui/material";
+import {
+  AppBar,
+  Box,
+  Divider,
+  IconButton,
+  Toolbar,
+  Typography,
+} from "@mui/material";
 import { useLocation } from "react-router-dom";
 import { useOrganizations } from "../../features/organizations/hooks";
 import { useProjects } from "../../features/projects/hooks";
@@ -53,7 +60,13 @@ export function Header({ onMenuClick }: HeaderProps) {
         bgcolor: "background.paper",
       }}
     >
-      <Toolbar sx={{ gap: 1 }}>
+      <Toolbar
+        sx={{
+          minHeight: 64,
+          px: { xs: 2, md: 3 },
+          gap: 2,
+        }}
+      >
         <IconButton
           aria-label="open navigation"
           onClick={onMenuClick}
@@ -67,8 +80,10 @@ export function Header({ onMenuClick }: HeaderProps) {
         <Typography
           variant="h6"
           sx={{
-            fontWeight: 600,
-            flex: 1,
+            fontWeight: 700,
+            letterSpacing: "-0.015em",
+            color: "text.primary",
+            flexShrink: 0,
           }}
         >
           {title}
@@ -76,37 +91,72 @@ export function Header({ onMenuClick }: HeaderProps) {
 
         <Box
           sx={{
-            display: { xs: "none", sm: "block" },
+            flex: 1,
+            minWidth: 0,
+            display: { xs: "none", sm: "flex" },
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 1,
           }}
         >
-          <Typography variant="body2" color="text.secondary">
-            Organization:{" "}
-            <Typography
-              component="span"
-              variant="body2"
-              color="text.primary"
-              sx={{ fontWeight: 600 }}
-            >
-              {selectedOrganization?.name ?? "None"}
-            </Typography>
-            {" | "}
-            Project:{" "}
-            <Typography
-              component="span"
-              variant="body2"
-              color="text.primary"
-              sx={{ fontWeight: 600 }}
-            >
-              {selectedProject?.name ?? "None"}
-            </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: { sm: 180, md: 240 },
+            }}
+          >
+            {selectedOrganization?.name ?? "No organization"}
+          </Typography>
+
+          <Typography
+            component="span"
+            aria-hidden="true"
+            sx={{
+              color: "text.disabled",
+              fontSize: 18,
+              lineHeight: 1,
+            }}
+          >
+            ›
+          </Typography>
+
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.primary",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: { sm: 200, md: 280 },
+            }}
+          >
+            {selectedProject?.name ?? "No project"}
           </Typography>
         </Box>
 
-        <Box>
-          <IconButton aria-label="account">
-            <AccountCircleOutlined />
-          </IconButton>
-        </Box>
+        <Divider
+          orientation="vertical"
+          flexItem
+          sx={{
+            display: { xs: "none", sm: "block" },
+            my: 1.5,
+          }}
+        />
+
+        <IconButton
+          aria-label="account"
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          <AccountCircleOutlined />
+        </IconButton>
       </Toolbar>
     </AppBar>
   );

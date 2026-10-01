@@ -1,11 +1,8 @@
 import {
-  DeleteOutlined,
-  EditOutlined,
-  FolderOpenOutlined,
-} from "@mui/icons-material";
-import {
+  Box,
   IconButton,
   Paper,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -41,6 +38,7 @@ export function DatasetTable({
             <TableCell>Type</TableCell>
             <TableCell>Description</TableCell>
             <TableCell>Status</TableCell>
+            <TableCell>Workflow</TableCell>
             <TableCell align="right">Actions</TableCell>
           </TableRow>
         </TableHead>
@@ -63,27 +61,20 @@ export function DatasetTable({
               </TableCell>
 
               <TableCell>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
+                <Typography variant="body2" color="text.secondary">
                   {dataset.slug}
                 </Typography>
               </TableCell>
 
               <TableCell>
-                <Typography variant="body2">
-                  {dataset.dataset_type}
-                </Typography>
+                <Typography variant="body2">{dataset.dataset_type}</Typography>
               </TableCell>
 
               <TableCell>
                 <Typography
                   variant="body2"
                   color={
-                    dataset.description
-                      ? "text.primary"
-                      : "text.secondary"
+                    dataset.description ? "text.primary" : "text.secondary"
                   }
                 >
                   {dataset.description ?? "No description"}
@@ -94,37 +85,71 @@ export function DatasetTable({
                 <StatusChip active={dataset.is_active} />
               </TableCell>
 
-              <TableCell align="right">
-                <Tooltip title="View versions">
+              <TableCell>
+                <Tooltip title="View dataset versions">
                   <IconButton
                     aria-label={`View versions for ${dataset.name}`}
                     onClick={() => onViewVersions(dataset)}
                     size="small"
                   >
-                    <FolderOpenOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/versions.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
+              </TableCell>
 
-                <Tooltip title="Edit dataset">
-                  <IconButton
-                    aria-label={`Edit ${dataset.name}`}
-                    onClick={() => onEdit(dataset)}
-                    size="small"
-                  >
-                    <EditOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+              <TableCell align="right">
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 0.5,
+                  }}
+                >
+                  <Tooltip title="Edit dataset">
+                    <IconButton
+                      aria-label={`Edit ${dataset.name}`}
+                      onClick={() => onEdit(dataset)}
+                      size="small"
+                    >
+                      <Box
+                        component="img"
+                        src="/svg/edit.svg"
+                        alt=""
+                        sx={{
+                          width: 24,
+                          height: 24,
+                        }}
+                      />
+                    </IconButton>
+                  </Tooltip>
 
-                <Tooltip title="Delete dataset">
-                  <IconButton
-                    aria-label={`Delete ${dataset.name}`}
-                    onClick={() => onDelete(dataset)}
-                    size="small"
-                    color="error"
-                  >
-                    <DeleteOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                  <Tooltip title="Delete dataset">
+                    <IconButton
+                      aria-label={`Delete ${dataset.name}`}
+                      onClick={() => onDelete(dataset)}
+                      size="small"
+                    >
+                      <Box
+                        component="img"
+                        src="/svg/delete.svg"
+                        alt=""
+                        sx={{
+                          width: 24,
+                          height: 24,
+                        }}
+                      />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </TableCell>
             </TableRow>
           ))}

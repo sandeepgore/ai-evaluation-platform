@@ -14,6 +14,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
+import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
 import { DatasetVersionCreateDialog } from "./DatasetVersionCreateDialog";
 import { DatasetVersionDeleteDialog } from "./DatasetVersionDeleteDialog";
 import { DatasetVersionEditDialog } from "./DatasetVersionEditDialog";
@@ -22,6 +23,7 @@ import { DatasetVersionImportDialog } from "./DatasetVersionImportDialog";
 import { DatasetVersionTable } from "./DatasetVersionTable";
 import type { DatasetVersion, DatasetVersionStatus } from "./api";
 import { useDatasetVersions } from "./hooks";
+import { useDataset } from "../datasets/hooks";
 
 type VersionStatusFilter = "all" | DatasetVersionStatus;
 
@@ -30,6 +32,7 @@ export function DatasetVersionListPage() {
   const { datasetId } = useParams<{ datasetId: string }>();
 
   const { data, isLoading, isError } = useDatasetVersions(datasetId ?? null);
+  const { data: dataset } = useDataset(datasetId ?? null);
 
   const [statusFilter, setStatusFilter] = useState<VersionStatusFilter>("all");
 
@@ -65,6 +68,21 @@ export function DatasetVersionListPage() {
 
   return (
     <Stack spacing={3}>
+      <AppBreadcrumbs
+        items={[
+          {
+            label: "Datasets",
+            to: "/datasets",
+          },
+          {
+            label: dataset?.name ?? "Dataset",
+          },
+          {
+            label: "Versions",
+          },
+        ]}
+      />
+
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
@@ -112,7 +130,10 @@ export function DatasetVersionListPage() {
             Import JSON
           </Button>
 
-          <Button variant="contained" onClick={() => setCreateDialogOpen(true)}>
+          <Button
+            variant="contained"
+            onClick={() => setCreateDialogOpen(true)}
+          >
             Create Version
           </Button>
         </Stack>
@@ -141,6 +162,9 @@ export function DatasetVersionListPage() {
           onEdit={setEditingVersion}
           onDelete={setDeletingVersion}
           onFinalize={setFinalizingVersion}
+          onViewCases={(version) =>
+            navigate(`/datasets/${datasetId}/versions/${version.id}/cases`)
+          }
           onView={(version) =>
             navigate(`/datasets/${datasetId}/versions/${version.id}`)
           }

@@ -1,8 +1,5 @@
 import {
-  DeleteOutlined,
-  EditOutlined,
-} from "@mui/icons-material";
-import {
+  Box,
   IconButton,
   Paper,
   Table,
@@ -59,10 +56,7 @@ export function OrganizationTable({
               </TableCell>
 
               <TableCell>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
+                <Typography variant="body2" color="text.secondary">
                   {organization.slug}
                 </Typography>
               </TableCell>
@@ -71,9 +65,7 @@ export function OrganizationTable({
                 <Typography
                   variant="body2"
                   color={
-                    organization.description
-                      ? "text.primary"
-                      : "text.secondary"
+                    organization.description ? "text.primary" : "text.secondary"
                   }
                 >
                   {organization.description ?? "No description"}
@@ -91,7 +83,15 @@ export function OrganizationTable({
                     onClick={() => onEdit(organization)}
                     size="small"
                   >
-                    <EditOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/edit.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
 
@@ -100,9 +100,16 @@ export function OrganizationTable({
                     aria-label={`Delete ${organization.name}`}
                     onClick={() => onDelete(organization)}
                     size="small"
-                    color="error"
                   >
-                    <DeleteOutlined fontSize="small" />
+                    <Box
+                      component="img"
+                      src="/svg/delete.svg"
+                      alt=""
+                      sx={{
+                        width: 24,
+                        height: 24,
+                      }}
+                    />
                   </IconButton>
                 </Tooltip>
               </TableCell>

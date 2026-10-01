@@ -15,6 +15,7 @@ import {
   type CreateDatasetVersionPayload,
   type UpdateDatasetVersionPayload,
 } from "./api";
+import { useNotification } from "../../components/common/NotificationProvider";
 
 const datasetVersionKeys = {
   all: ["datasetVersions"] as const,
@@ -46,20 +47,29 @@ export function useDatasetVersion(versionId: string | null) {
 
 export function useCreateDatasetVersion() {
   const queryClient = useQueryClient();
+  const { notify } = useNotification();
 
   return useMutation({
     mutationFn: (payload: CreateDatasetVersionPayload) =>
       createDatasetVersion(payload),
+
     onSuccess: (version) => {
       void queryClient.invalidateQueries({
         queryKey: datasetVersionKeys.list(version.dataset_id),
       });
+    },
+
+    onError: (error) => {
+      if (error instanceof Error) {
+        notify(error.message, "error");
+      }
     },
   });
 }
 
 export function useUpdateDatasetVersion() {
   const queryClient = useQueryClient();
+  const { notify } = useNotification();
 
   return useMutation({
     mutationFn: ({
@@ -69,6 +79,7 @@ export function useUpdateDatasetVersion() {
       versionId: string;
       payload: UpdateDatasetVersionPayload;
     }) => updateDatasetVersion(versionId, payload),
+
     onSuccess: (version) => {
       queryClient.setQueryData(
         datasetVersionKeys.detail(version.id),
@@ -78,16 +89,24 @@ export function useUpdateDatasetVersion() {
       void queryClient.invalidateQueries({
         queryKey: datasetVersionKeys.list(version.dataset_id),
       });
+    },
+
+    onError: (error) => {
+      if (error instanceof Error) {
+        notify(error.message, "error");
+      }
     },
   });
 }
 
 export function useFinalizeDatasetVersion() {
   const queryClient = useQueryClient();
+  const { notify } = useNotification();
 
   return useMutation({
     mutationFn: (versionId: string) =>
       finalizeDatasetVersion(versionId),
+
     onSuccess: (version) => {
       queryClient.setQueryData(
         datasetVersionKeys.detail(version.id),
@@ -98,15 +117,23 @@ export function useFinalizeDatasetVersion() {
         queryKey: datasetVersionKeys.list(version.dataset_id),
       });
     },
+
+    onError: (error) => {
+      if (error instanceof Error) {
+        notify(error.message, "error");
+      }
+    },
   });
 }
 
 export function useDeleteDatasetVersion() {
   const queryClient = useQueryClient();
+  const { notify } = useNotification();
 
   return useMutation({
     mutationFn: (versionId: string) =>
       deleteDatasetVersion(versionId),
+
     onSuccess: (_data, versionId) => {
       queryClient.removeQueries({
         queryKey: datasetVersionKeys.detail(versionId),
@@ -116,11 +143,18 @@ export function useDeleteDatasetVersion() {
         queryKey: datasetVersionKeys.all,
       });
     },
+
+    onError: (error) => {
+      if (error instanceof Error) {
+        notify(error.message, "error");
+      }
+    },
   });
 }
 
 export function useImportDataset() {
   const queryClient = useQueryClient();
+  const { notify } = useNotification();
 
   return useMutation({
     mutationFn: ({
@@ -130,10 +164,17 @@ export function useImportDataset() {
       datasetId: string;
       payload: DatasetImportPayload;
     }) => importDataset(datasetId, payload),
+
     onSuccess: (version) => {
       void queryClient.invalidateQueries({
         queryKey: datasetVersionKeys.list(version.dataset_id),
       });
+    },
+
+    onError: (error) => {
+      if (error instanceof Error) {
+        notify(error.message, "error");
+      }
     },
   });
 }

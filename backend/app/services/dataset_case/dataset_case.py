@@ -60,7 +60,6 @@ class DatasetCaseService:
             position_result = await db.execute(
                 select(func.coalesce(func.max(DatasetCase.position), -1) + 1).where(
                     DatasetCase.dataset_version_id == data.dataset_version_id,
-                    DatasetCase.is_active.is_(True),
                 )
             )
 
