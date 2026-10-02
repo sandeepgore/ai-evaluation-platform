@@ -72,15 +72,22 @@ function SidebarContent() {
         height: "100%",
         display: "flex",
         flexDirection: "column",
+        bgcolor: "background.paper",
       }}
     >
-      <Box sx={{ px: 2.5, py: 2.5 }}>
+      <Box
+        sx={{
+          px: 2.5,
+          py: 2.5,
+        }}
+      >
         <Typography
           variant="h6"
           sx={{
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
+            fontWeight: 750,
+            letterSpacing: "-0.025em",
             color: "text.primary",
+            lineHeight: 1.2,
           }}
         >
           AI Evaluation
@@ -90,7 +97,8 @@ function SidebarContent() {
           variant="body2"
           sx={{
             color: "text.secondary",
-            mt: 0.25,
+            mt: 0.5,
+            fontWeight: 500,
           }}
         >
           Platform
@@ -112,12 +120,18 @@ function SidebarContent() {
             to={item.path}
             end={item.path === "/"}
             sx={{
+              position: "relative",
               minHeight: 44,
-              borderRadius: 2,
+              borderRadius: 1.5,
               mb: 0.5,
               px: 1.5,
               color: "text.secondary",
               transition: "background-color 120ms ease, color 120ms ease",
+
+              "& .MuiListItemIcon-root": {
+                color: "inherit",
+                transition: "color 120ms ease",
+              },
 
               "&:hover": {
                 bgcolor: "action.hover",
@@ -125,16 +139,27 @@ function SidebarContent() {
               },
 
               "&.active": {
-                bgcolor: "primary.50",
+                bgcolor: "rgba(79, 70, 229, 0.08)",
                 color: "primary.main",
                 fontWeight: 600,
+
+                "&::before": {
+                  content: '""',
+                  position: "absolute",
+                  left: 0,
+                  top: 8,
+                  bottom: 8,
+                  width: 3,
+                  borderRadius: "0 3px 3px 0",
+                  bgcolor: "primary.main",
+                },
 
                 "& .MuiListItemIcon-root": {
                   color: "primary.main",
                 },
 
                 "&:hover": {
-                  bgcolor: "primary.100",
+                  bgcolor: "rgba(79, 70, 229, 0.11)",
                 },
               },
             }}
@@ -155,6 +180,7 @@ function SidebarContent() {
                   sx={{
                     fontSize: 14,
                     fontWeight: "inherit",
+                    letterSpacing: "-0.005em",
                   }}
                 >
                   {item.label}

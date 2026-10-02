@@ -12,6 +12,7 @@ const versions: DatasetVersion[] = [
     status: "ready",
     description: "Production evaluation dataset",
     case_count: 10,
+    analytics: null,
     is_active: true,
   },
   {
@@ -21,6 +22,7 @@ const versions: DatasetVersion[] = [
     status: "draft",
     description: null,
     case_count: 0,
+    analytics: null,
     is_active: true,
   },
   {
@@ -30,6 +32,7 @@ const versions: DatasetVersion[] = [
     status: "archived",
     description: "Archived version",
     case_count: 0,
+    analytics: null,
     is_active: true,
   },
 ];
@@ -42,6 +45,7 @@ describe("DatasetVersionTable", () => {
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );
@@ -64,6 +68,7 @@ describe("DatasetVersionTable", () => {
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );
@@ -83,6 +88,7 @@ describe("DatasetVersionTable", () => {
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={onView}
       />,
     );
@@ -103,6 +109,7 @@ describe("DatasetVersionTable", () => {
         onEdit={onEdit}
         onDelete={vi.fn()}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );
@@ -120,6 +127,7 @@ describe("DatasetVersionTable", () => {
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );
@@ -141,12 +149,18 @@ describe("DatasetVersionTable", () => {
     const user = userEvent.setup();
     const onFinalize = vi.fn();
 
+    const draftVersionWithCases: DatasetVersion = {
+      ...versions[1],
+      case_count: 1,
+    };
+
     render(
       <DatasetVersionTable
-        versions={versions}
+        versions={[versions[0], draftVersionWithCases, versions[2]]}
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onFinalize={onFinalize}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );
@@ -156,7 +170,7 @@ describe("DatasetVersionTable", () => {
     );
 
     expect(onFinalize).toHaveBeenCalledTimes(1);
-    expect(onFinalize).toHaveBeenCalledWith(versions[1]);
+    expect(onFinalize).toHaveBeenCalledWith(draftVersionWithCases);
   });
 
   it("allows delete for a version with no cases", async () => {
@@ -169,6 +183,7 @@ describe("DatasetVersionTable", () => {
         onEdit={vi.fn()}
         onDelete={onDelete}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );
@@ -192,6 +207,7 @@ describe("DatasetVersionTable", () => {
         onEdit={vi.fn()}
         onDelete={vi.fn()}
         onFinalize={vi.fn()}
+        onViewCases={vi.fn()}
         onView={vi.fn()}
       />,
     );

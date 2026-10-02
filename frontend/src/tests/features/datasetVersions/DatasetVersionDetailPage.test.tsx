@@ -3,13 +3,19 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DatasetVersionDetailPage } from "../../../features/datasetVersions/DatasetVersionDetailPage";
 import type { DatasetVersion } from "../../../features/datasetVersions/api";
+import { useDataset } from "../../../features/datasets/hooks";
 import { useDatasetVersion } from "../../../features/datasetVersions/hooks";
 
 vi.mock("../../../features/datasetVersions/hooks", () => ({
   useDatasetVersion: vi.fn(),
 }));
 
+vi.mock("../../../features/datasets/hooks", () => ({
+  useDataset: vi.fn(),
+}));
+
 const mockedUseDatasetVersion = vi.mocked(useDatasetVersion);
+const mockedUseDataset = vi.mocked(useDataset);
 
 const version: DatasetVersion = {
   id: "version-1",
@@ -18,6 +24,7 @@ const version: DatasetVersion = {
   status: "ready",
   description: "Production evaluation version",
   case_count: 25,
+  analytics: null,
   is_active: true,
 };
 
@@ -37,6 +44,15 @@ function renderPage() {
 describe("DatasetVersionDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockedUseDataset.mockReturnValue({
+      data: {
+        id: "dataset-1",
+        name: "RAG Evaluation",
+      },
+      isLoading: false,
+      isError: false,
+    } as never);
   });
 
   it("renders the missing version ID state", () => {
@@ -125,6 +141,57 @@ describe("DatasetVersionDetailPage", () => {
 
     expect(mockedUseDatasetVersion).toHaveBeenCalledWith("version-1");
   });
+
+  it("tells the user to finalize a draft version before analytics are available", () => {
+    mockedUseDatasetVersion.mockReturnValue({
+      data: {
+        ...version,
+        status: "draft",
+        analytics: {
+          case_count: 25,
+          reference_count: 20,
+          context_count: 15,
+          reference_coverage: 0.8,
+          context_coverage: 0.6,
+        },
+      },
+      isLoading: false,
+      isError: false,
+    } as never);
+
+    renderPage();
+
+    expect(
+      screen.getByText(/Analytics are not available yet/i),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText(
+        /Finalize the version to generate and view reference and context analytics/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does not display reference or context analytics cards for a draft version", () => {
+    mockedUseDatasetVersion.mockReturnValue({
+      data: {
+        ...version,
+        status: "draft",
+        analytics: {
+          case_count: 25,
+          reference_count: 20,
+          context_count: 15,
+          reference_coverage: 0.8,
+          context_coverage: 0.6,
+        },
+      },
+      isLoading: false,
+      isError: false,
+    } as never);
+
+    renderPage();
+
+    expect(screen.queryByText("Reference Data")).not.toBeInTheDocument();
+    expect(screen.queryByText("Context Data")).not.toBeInTheDocument();
+  });
 });
-
-
