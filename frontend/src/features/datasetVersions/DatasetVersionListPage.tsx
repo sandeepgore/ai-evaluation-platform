@@ -130,10 +130,7 @@ export function DatasetVersionListPage() {
             Import JSON
           </Button>
 
-          <Button
-            variant="contained"
-            onClick={() => setCreateDialogOpen(true)}
-          >
+          <Button variant="contained" onClick={() => setCreateDialogOpen(true)}>
             Create Version
           </Button>
         </Stack>

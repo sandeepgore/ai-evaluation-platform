@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DatasetVersionListPage } from "../../../features/datasetVersions/DatasetVersionListPage";
 import type { DatasetVersion } from "../../../features/datasetVersions/api";
+import { useDataset } from "../../../features/datasets/hooks";
 
 const useDatasetVersions = vi.fn();
 
@@ -11,6 +12,12 @@ vi.mock("../../../features/datasetVersions/hooks", () => ({
   useDatasetVersions: (datasetId: string | null) =>
     useDatasetVersions(datasetId),
 }));
+
+vi.mock("../../../features/datasets/hooks", () => ({
+  useDataset: vi.fn(),
+}));
+
+const mockedUseDataset = vi.mocked(useDataset);
 
 vi.mock("../../../features/datasetVersions/DatasetVersionCreateDialog", () => ({
   DatasetVersionCreateDialog: ({
@@ -88,7 +95,8 @@ const versions: DatasetVersion[] = [
     version: 2,
     status: "ready",
     description: "Production version",
-    case_count: 10,
+    case_count: 0,
+    analytics: null,
     is_active: true,
   },
   {
@@ -97,7 +105,8 @@ const versions: DatasetVersion[] = [
     version: 1,
     status: "draft",
     description: null,
-    case_count: 0,
+    case_count: 1,
+    analytics: null,
     is_active: true,
   },
 ];
@@ -122,6 +131,15 @@ function renderPage() {
 describe("DatasetVersionListPage", () => {
   beforeEach(() => {
     useDatasetVersions.mockReset();
+
+    mockedUseDataset.mockReturnValue({
+      data: {
+        id: "dataset-1",
+        name: "RAG Evaluation",
+      },
+      isLoading: false,
+      isError: false,
+    } as never);
   });
 
   it("renders the missing dataset ID state", () => {
@@ -259,9 +277,9 @@ describe("DatasetVersionListPage", () => {
 
     renderPage();
 
-    await user.click(screen.getByRole("button", { name: "Delete version 1" }));
+    await user.click(screen.getByRole("button", { name: "Delete version 2" }));
 
-    expect(screen.getByText("Delete Version Dialog: v1")).toBeInTheDocument();
+    expect(screen.getByText("Delete Version Dialog: v2")).toBeInTheDocument();
   });
 
   it("opens the finalize dialog for the selected draft version", async () => {
@@ -298,5 +316,3 @@ describe("DatasetVersionListPage", () => {
     expect(screen.getByText("Version Detail Page")).toBeInTheDocument();
   });
 });
-
-

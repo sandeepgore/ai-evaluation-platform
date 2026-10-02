@@ -22,6 +22,7 @@ describe("DatasetVersionCreateDialog", () => {
         status: "draft",
         description: "Test version",
         case_count: 0,
+        analytics: null,
         is_active: true,
       }),
       isPending: false,
@@ -39,10 +40,6 @@ describe("DatasetVersionCreateDialog", () => {
 
     expect(
       screen.getByRole("dialog", { name: "Create Dataset Version" }),
-    ).toBeInTheDocument();
-
-    expect(
-      screen.getByRole("spinbutton", { name: "Version" }),
     ).toBeInTheDocument();
 
     expect(
@@ -78,6 +75,7 @@ describe("DatasetVersionCreateDialog", () => {
       status: "draft",
       description: "New version",
       case_count: 0,
+      analytics: null,
       is_active: true,
     });
 
@@ -94,10 +92,6 @@ describe("DatasetVersionCreateDialog", () => {
       />,
     );
 
-    await user.clear(screen.getByRole("spinbutton", { name: "Version" }));
-
-    await user.type(screen.getByRole("spinbutton", { name: "Version" }), "5");
-
     await user.type(
       screen.getByRole("textbox", { name: "Description" }),
       "New version",
@@ -108,7 +102,6 @@ describe("DatasetVersionCreateDialog", () => {
     expect(mutateAsync).toHaveBeenCalledTimes(1);
     expect(mutateAsync).toHaveBeenCalledWith({
       dataset_id: "dataset-1",
-      version: 5,
       description: "New version",
     });
 
@@ -124,6 +117,7 @@ describe("DatasetVersionCreateDialog", () => {
       status: "draft",
       description: null,
       case_count: 0,
+      analytics: null,
       is_active: true,
     });
 
@@ -144,7 +138,6 @@ describe("DatasetVersionCreateDialog", () => {
 
     expect(mutateAsync).toHaveBeenCalledWith({
       dataset_id: "dataset-1",
-      version: 1,
       description: null,
     });
   });
@@ -162,8 +155,6 @@ describe("DatasetVersionCreateDialog", () => {
         onClose={vi.fn()}
       />,
     );
-
-    expect(screen.getByRole("spinbutton", { name: "Version" })).toBeDisabled();
 
     expect(screen.getByRole("textbox", { name: "Description" })).toBeDisabled();
 
