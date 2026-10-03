@@ -167,6 +167,10 @@ async def get_evaluation_run_summary(
     )
 
     if persisted_summary is not None:
+        performance = (
+            persisted_summary.performance if isinstance(persisted_summary.performance, dict) else {}
+        )
+
         summary = {
             "model": (
                 persisted_summary.metadata.get("model")
@@ -176,31 +180,23 @@ async def get_evaluation_run_summary(
             "overall_score": persisted_summary.overall_score,
             "metrics": persisted_summary.metrics,
             "feedback": persisted_summary.feedback,
-            "total_results": (
-                persisted_summary.performance.get(
-                    "total_results",
-                    0,
-                )
-                if isinstance(persisted_summary.performance, dict)
-                else 0
+            "total_results": performance.get(
+                "total_results",
+                0,
             ),
-            "completed_cases": (
-                persisted_summary.performance.get(
-                    "completed_cases",
-                    0,
-                )
-                if isinstance(persisted_summary.performance, dict)
-                else 0
+            "completed_cases": performance.get(
+                "completed_cases",
+                0,
             ),
-            "failed_cases": (
-                persisted_summary.performance.get(
-                    "failed_cases",
-                    0,
-                )
-                if isinstance(persisted_summary.performance, dict)
-                else 0
+            "failed_cases": performance.get(
+                "failed_cases",
+                0,
             ),
-            "performance": persisted_summary.performance,
+            "not_applicable_cases": performance.get(
+                "not_applicable_cases",
+                0,
+            ),
+            "performance": performance,
         }
 
         try:

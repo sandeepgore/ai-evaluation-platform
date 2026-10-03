@@ -2626,7 +2626,7 @@ async def test_engine_does_not_call_model_when_no_evaluator_is_applicable(
 
     assert result.status == EvaluationRunStatus.COMPLETED
     assert result.total_cases == 2
-    assert result.completed_cases == 2
+    assert result.completed_cases == 1
     assert result.failed_cases == 0
 
     # The reference case is eligible and therefore calls the model.
@@ -2638,11 +2638,15 @@ async def test_engine_does_not_call_model_when_no_evaluator_is_applicable(
 
     saved_results = [call.kwargs for call in evaluation_result_create.call_args_list]
 
-    not_applicable_result = next(
+    not_applicable_results = [
         result
         for result in saved_results
         if result["scores"]["exact_match"]["status"] == "not_applicable"
-    )
+    ]
+
+    assert len(not_applicable_results) == 1
+
+    not_applicable_result = not_applicable_results[0]
 
     assert not_applicable_result["status"] == "completed"
     assert not_applicable_result["scores"]["exact_match"]["score"] is None
@@ -2753,7 +2757,7 @@ async def test_engine_batch_skips_not_applicable_cases_and_preserves_result_mapp
 
     assert result.status == EvaluationRunStatus.COMPLETED
     assert result.total_cases == 4
-    assert result.completed_cases == 4
+    assert result.completed_cases == 2
     assert result.failed_cases == 0
 
     model_gateway.generate.assert_not_awaited()
@@ -2794,20 +2798,28 @@ async def test_engine_batch_skips_not_applicable_cases_and_preserves_result_mapp
     }
 
     assert results_by_case_id[case_1.id]["actual_output"] == "answer 1"
-    assert results_by_case_id[case_1.id]["scores"]["exact_match"]["status"] == ("completed")
+    assert results_by_case_id[case_1.id]["scores"]["exact_match"]["status"] == "completed"
 
     assert results_by_case_id[case_2.id]["actual_output"] is None
-    assert results_by_case_id[case_2.id]["scores"]["exact_match"]["status"] == ("not_applicable")
+    assert results_by_case_id[case_2.id]["scores"]["exact_match"]["status"] == "not_applicable"
     assert results_by_case_id[case_2.id]["scores"]["exact_match"]["score"] is None
-    assert results_by_case_id[case_2.id]["scores"]["overall"]["status"] == ("not_applicable")
+    assert results_by_case_id[case_2.id]["scores"]["overall"]["status"] == "not_applicable"
 
     assert results_by_case_id[case_3.id]["actual_output"] == "answer 3"
-    assert results_by_case_id[case_3.id]["scores"]["exact_match"]["status"] == ("completed")
+    assert results_by_case_id[case_3.id]["scores"]["exact_match"]["status"] == "completed"
 
     assert results_by_case_id[case_4.id]["actual_output"] is None
-    assert results_by_case_id[case_4.id]["scores"]["exact_match"]["status"] == ("not_applicable")
+    assert results_by_case_id[case_4.id]["scores"]["exact_match"]["status"] == "not_applicable"
     assert results_by_case_id[case_4.id]["scores"]["exact_match"]["score"] is None
-    assert results_by_case_id[case_4.id]["scores"]["overall"]["status"] == ("not_applicable")
+    assert results_by_case_id[case_4.id]["scores"]["overall"]["status"] == "not_applicable"
+
+    not_applicable_results = [
+        saved_result
+        for saved_result in saved_results
+        if saved_result["scores"]["overall"]["status"] == "not_applicable"
+    ]
+
+    assert len(not_applicable_results) == 2
 
     assert scoring_service.calculate.call_count == 2
 

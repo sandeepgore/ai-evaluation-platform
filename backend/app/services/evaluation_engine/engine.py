@@ -601,7 +601,11 @@ class EvaluationEngine:
     ) -> None:
         """Persist a case where no selected evaluator is applicable.
 
-        This is a completed evaluation case, not a failure.
+        The case is persisted as a completed result for traceability, with
+        an overall status of ``not_applicable``.
+
+        It is intentionally excluded from ``run.completed_cases`` because
+        no evaluation was performed.
 
         No model inference is performed.
         """
@@ -658,8 +662,6 @@ class EvaluationEngine:
                 )
             except Exception:
                 pass
-
-        run.completed_cases += 1
 
     async def _evaluate_case(
         self,
