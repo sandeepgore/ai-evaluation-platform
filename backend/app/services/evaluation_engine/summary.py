@@ -35,8 +35,31 @@ class EvaluationRunSummaryService:
         not_applicable  -> excluded from metric average
         failed          -> execution failure, excluded from metric average
 
+    Case-level N/A is tracked separately from completed cases:
+
+        case-level N/A -> no selected evaluator was applicable
+        completed      -> at least one selected evaluator was executed
+
     N/A is never interpreted as a zero score.
     """
+
+    @staticmethod
+    def _is_case_not_applicable(
+        result: EvaluationResult,
+    ) -> bool:
+        """Return True when the entire evaluation case was not applicable."""
+
+        if result.status != "completed":
+            return False
+
+        scores = result.scores or {}
+
+        if not isinstance(scores, dict):
+            return False
+
+        overall = scores.get("overall")
+
+        return isinstance(overall, dict) and overall.get("status") == "not_applicable"
 
     @staticmethod
     async def calculate(
@@ -60,6 +83,7 @@ class EvaluationRunSummaryService:
                 "total_results": 0,
                 "completed_cases": 0,
                 "failed_cases": 0,
+                "not_applicable_cases": 0,
                 "feedback": {
                     "overall": "No evaluation results are available.",
                     "strengths": [],
@@ -89,6 +113,7 @@ class EvaluationRunSummaryService:
                     "total_results": 0,
                     "completed_cases": 0,
                     "failed_cases": 0,
+                    "not_applicable_cases": 0,
                 },
             }
 
@@ -136,9 +161,20 @@ class EvaluationRunSummaryService:
 
         results = result.scalars().all()
 
-        completed_results = [item for item in results if item.status == "completed"]
+        case_not_applicable_results = [
+            item for item in results if EvaluationRunSummaryService._is_case_not_applicable(item)
+        ]
+
+        completed_results = [
+            item
+            for item in results
+            if item.status == "completed"
+            and not EvaluationRunSummaryService._is_case_not_applicable(item)
+        ]
 
         failed_results = [item for item in results if item.status == "failed"]
+
+        not_applicable_cases = len(case_not_applicable_results)
 
         # --------------------------------------------------------------
         # Discover persisted metrics
@@ -200,11 +236,36 @@ class EvaluationRunSummaryService:
                 continue
 
             # ----------------------------------------------------------
-            # Completed case
+            # Completed / case-level N/A result
             # ----------------------------------------------------------
 
             if result.status != "completed":
                 continue
+
+            # A case-level N/A result is not an executed case.
+            #
+            # Its individual evaluator scores are already persisted as
+            # not_applicable, so metric applicability below will record
+            # those metrics as N/A.
+            #
+            # It must not contribute to overall numeric scoring.
+            # ----------------------------------------------------------
+
+            if EvaluationRunSummaryService._is_case_not_applicable(result):
+                for metric_name in metric_names:
+                    metric_data = scores.get(metric_name)
+
+                    if (
+                        isinstance(metric_data, dict)
+                        and metric_data.get("status") == "not_applicable"
+                    ):
+                        metric_applicability[metric_name]["not_applicable"] += 1
+
+                continue
+
+            # ----------------------------------------------------------
+            # Completed case
+            # ----------------------------------------------------------
 
             for metric_name in metric_names:
                 metric_data = scores.get(metric_name)
@@ -250,10 +311,8 @@ class EvaluationRunSummaryService:
             # ----------------------------------------------------------
             # Overall score
             #
-            # The engine persists overall.score=None when no selected
-            # evaluator is applicable to the case.
-            #
-            # Therefore only numeric overall scores contribute.
+            # Only numeric overall scores contribute.
+            # Case-level N/A was already excluded above.
             # ----------------------------------------------------------
 
             overall_data = scores.get("overall")
@@ -398,6 +457,7 @@ class EvaluationRunSummaryService:
             "total_results": len(results),
             "completed_cases": len(completed_results),
             "failed_cases": len(failed_results),
+            "not_applicable_cases": not_applicable_cases,
         }
 
         return {
@@ -408,6 +468,7 @@ class EvaluationRunSummaryService:
             "total_results": len(results),
             "completed_cases": len(completed_results),
             "failed_cases": len(failed_results),
+            "not_applicable_cases": not_applicable_cases,
             "feedback": feedback,
             "performance": performance,
             "metadata": {
@@ -578,8 +639,8 @@ Rules:
 7. Weaknesses must contain at least 3 evidence-grounded observations.
 8. Patterns must contain at least 3 recurring or cross-case observations.
 9. Recommendations must contain at least 3 actionable recommendations.
-10. Consider performance information such as completion and failure counts
-    when it provides meaningful evidence.
+10. Consider performance information such as completion, failure, and
+    not-applicable counts when it provides meaningful evidence.
 11. Do not manufacture praise or criticism unsupported by the supplied evidence.
 12. When evidence is limited, make conservative evidence-based observations.
 13. evaluator_feedback may remain an empty list.
@@ -849,8 +910,8 @@ Rules:
         elif metric_applicability:
             recommendations.append(
                 (
-                    "Review metric applicability coverage and add complementary "
-                    "metrics where appropriate."
+                    "Review metric applicability coverage and add "
+                    "complementary metrics where appropriate."
                 )
             )
         else:
@@ -1137,8 +1198,8 @@ Rules:
         if not strengths:
             if overall_score is None:
                 strengths.append(
-                    "The evaluation recorded execution evidence even though "
-                    "no applicable overall score was available."
+                    "The evaluation recorded execution evidence even "
+                    "though no applicable overall score was available."
                 )
             else:
                 strengths.append("The evaluation produced measurable metric results.")
@@ -1178,8 +1239,10 @@ Rules:
             patterns,
             defaults=[
                 "Metric performance varies across evaluation dimensions.",
-                "Completed and failed cases should be considered when interpreting the run.",
-                "Case-level evaluator feedback provides additional evidence for recurring behavior.",
+                "Completed, failed, and not-applicable cases should be "
+                "considered when interpreting the run.",
+                "Case-level evaluator feedback provides additional evidence "
+                "for recurring behavior.",
             ],
         )
 

@@ -99,10 +99,18 @@ class EvaluationResultService:
         db: AsyncSession,
         evaluation_run_id: UUID,
     ) -> dict:
+        case_not_applicable = (
+            EvaluationResult.status == "completed",
+            EvaluationResult.scores["overall"]["status"].as_string() == "not_applicable",
+        )
+
         query = select(
             func.count(EvaluationResult.id).label("total"),
             func.count(EvaluationResult.id)
-            .filter(EvaluationResult.status == "completed")
+            .filter(
+                EvaluationResult.status == "completed",
+                ~(EvaluationResult.scores["overall"]["status"].as_string() == "not_applicable"),
+            )
             .label("completed"),
             func.count(EvaluationResult.id)
             .filter(EvaluationResult.status == "failed")
@@ -110,6 +118,7 @@ class EvaluationResultService:
             func.count(EvaluationResult.id)
             .filter(EvaluationResult.status == "pending")
             .label("pending"),
+            func.count(EvaluationResult.id).filter(*case_not_applicable).label("not_applicable"),
         ).where(
             EvaluationResult.evaluation_run_id == evaluation_run_id,
             EvaluationResult.is_active.is_(True),
@@ -123,6 +132,7 @@ class EvaluationResultService:
             "completed": row.completed,
             "failed": row.failed,
             "pending": row.pending,
+            "not_applicable": row.not_applicable,
         }
 
     @staticmethod

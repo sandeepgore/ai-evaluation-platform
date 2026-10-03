@@ -38,6 +38,7 @@ def create_fake_run():
         total_cases=1,
         completed_cases=0,
         failed_cases=0,
+        not_applicable_cases=0,
         is_active=True,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
@@ -301,7 +302,12 @@ def test_get_evaluation_run_summary():
         "total_results": 2,
         "completed_cases": 2,
         "failed_cases": 0,
+        "not_applicable_cases": 0,
         "performance": {
+            "total_results": 2,
+            "completed_cases": 2,
+            "failed_cases": 0,
+            "not_applicable_cases": 0,
             "duration_ms": 10000,
             "total_model_latency_ms": 6000,
             "avg_model_latency_ms": 3000.0,
@@ -364,8 +370,14 @@ def test_get_evaluation_run_summary():
     assert data["total_results"] == 2
     assert data["completed_cases"] == 2
     assert data["failed_cases"] == 0
+    assert data["not_applicable_cases"] == 0
 
     performance = data["performance"]
+
+    assert performance["total_results"] == 2
+    assert performance["completed_cases"] == 2
+    assert performance["failed_cases"] == 0
+    assert performance["not_applicable_cases"] == 0
 
     assert performance["duration_ms"] == 10000
     assert performance["total_model_latency_ms"] == 6000
@@ -411,7 +423,7 @@ def test_get_evaluation_run_summary_cache_hit():
             "patterns": [
                 ("Strong token-level similarity appears consistently across evaluated cases."),
                 "Responses generally preserve expected answer content.",
-                "The evaluation shows stable performance across completed cases.",
+                ("The evaluation shows stable performance across completed cases."),
             ],
             "recommendations": [
                 "Maintain the current level of answer quality.",
@@ -423,7 +435,12 @@ def test_get_evaluation_run_summary_cache_hit():
         "total_results": 5,
         "completed_cases": 5,
         "failed_cases": 0,
+        "not_applicable_cases": 0,
         "performance": {
+            "total_results": 5,
+            "completed_cases": 5,
+            "failed_cases": 0,
+            "not_applicable_cases": 0,
             "duration_ms": 10000,
             "total_model_latency_ms": 5000,
             "avg_model_latency_ms": 1000.0,
@@ -464,6 +481,14 @@ def test_get_evaluation_run_summary_cache_hit():
 
         assert data["overall_score"] == 0.85
         assert data["metrics"]["f1"] == 0.85
+        assert data["not_applicable_cases"] == 0
+
+        performance = data["performance"]
+
+        assert performance["total_results"] == 5
+        assert performance["completed_cases"] == 5
+        assert performance["failed_cases"] == 0
+        assert performance["not_applicable_cases"] == 0
 
         calculate_mock.assert_not_awaited()
         redis.get.assert_awaited_once()
@@ -509,7 +534,12 @@ def test_get_evaluation_run_summary_cache_miss():
         "total_results": 2,
         "completed_cases": 2,
         "failed_cases": 0,
+        "not_applicable_cases": 0,
         "performance": {
+            "total_results": 2,
+            "completed_cases": 2,
+            "failed_cases": 0,
+            "not_applicable_cases": 0,
             "duration_ms": 10000,
             "total_model_latency_ms": 6000,
             "avg_model_latency_ms": 3000.0,
@@ -556,6 +586,14 @@ def test_get_evaluation_run_summary_cache_miss():
 
         assert data["overall_score"] == 0.75
         assert data["metrics"]["f1"] == 0.75
+        assert data["not_applicable_cases"] == 0
+
+        performance = data["performance"]
+
+        assert performance["total_results"] == 2
+        assert performance["completed_cases"] == 2
+        assert performance["failed_cases"] == 0
+        assert performance["not_applicable_cases"] == 0
 
         persistence_get_mock.assert_awaited_once_with(
             ANY,
@@ -592,7 +630,7 @@ def test_get_evaluation_run_summary_works_when_redis_get_fails():
             "strengths": [
                 "The evaluation produced a measurable F1 score.",
                 "Completed cases provide useful evaluation evidence.",
-                "The summary remains available despite the Redis cache failure.",
+                ("The summary remains available despite the Redis cache failure."),
             ],
             "weaknesses": [
                 "F1 performance indicates room for improvement.",
@@ -607,14 +645,19 @@ def test_get_evaluation_run_summary_works_when_redis_get_fails():
             "recommendations": [
                 "Improve alignment with expected answers.",
                 "Increase consistency of generated responses.",
-                "Continue evaluating F1 performance across subsequent runs.",
+                ("Continue evaluating F1 performance across subsequent runs."),
             ],
             "evaluator_feedback": [],
         },
         "total_results": 1,
         "completed_cases": 1,
         "failed_cases": 0,
+        "not_applicable_cases": 0,
         "performance": {
+            "total_results": 1,
+            "completed_cases": 1,
+            "failed_cases": 0,
+            "not_applicable_cases": 0,
             "duration_ms": 1000,
             "total_model_latency_ms": 500,
             "avg_model_latency_ms": 500.0,
@@ -653,6 +696,14 @@ def test_get_evaluation_run_summary_works_when_redis_get_fails():
 
         assert response.status_code == 200
         assert response.json()["overall_score"] == 0.70
+        assert response.json()["not_applicable_cases"] == 0
+
+        performance = response.json()["performance"]
+
+        assert performance["total_results"] == 1
+        assert performance["completed_cases"] == 1
+        assert performance["failed_cases"] == 0
+        assert performance["not_applicable_cases"] == 0
 
         persistence_get_mock.assert_awaited_once_with(
             ANY,

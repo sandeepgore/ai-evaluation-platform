@@ -51,7 +51,7 @@ def build_db(dataset, next_version):
 
 
 @pytest.mark.asyncio
-async def test_import_json_creates_ready_dataset_version_and_cases():
+async def test_import_json_creates_draft_dataset_version_and_cases():
     dataset_id = uuid4()
 
     dataset = MagicMock()
@@ -93,15 +93,9 @@ async def test_import_json_creates_ready_dataset_version_and_cases():
 
     assert version.dataset_id == dataset_id
     assert version.version == 1
-    assert version.status == DatasetVersionStatus.READY
+    assert version.status == DatasetVersionStatus.DRAFT
     assert version.case_count == 2
-
-    assert version.analytics is not None
-    assert version.analytics["case_count"] == 2
-    assert version.analytics["reference_count"] == 2
-    assert version.analytics["context_count"] == 0
-    assert version.analytics["reference_coverage"] == 1.0
-    assert version.analytics["context_coverage"] == 0.0
+    assert version.analytics is None
 
     db.add.assert_called_once_with(version)
     db.commit.assert_awaited_once()
@@ -118,8 +112,9 @@ async def test_import_json_creates_ready_dataset_version_and_cases():
     assert inserted_rows[0]["input"] == "What is AI?"
     assert inserted_rows[1]["input"] == "What is ML?"
 
-    assert inserted_rows[0]["expected_output"] == ("Artificial Intelligence")
-    assert inserted_rows[1]["expected_output"] == ("Machine Learning")
+    assert inserted_rows[0]["expected_output"] == "Artificial Intelligence"
+    assert inserted_rows[1]["expected_output"] == "Machine Learning"
+
     assert inserted_rows[0]["case_metadata"] == {
         "category": "ai",
         "difficulty": "easy",
@@ -129,6 +124,7 @@ async def test_import_json_creates_ready_dataset_version_and_cases():
         "category": "ml",
         "difficulty": "medium",
     }
+
     assert inserted_rows[0]["has_reference"] is True
     assert inserted_rows[1]["has_reference"] is True
 
@@ -171,7 +167,8 @@ async def test_import_json_creates_next_version_number():
 
     assert version.version == 5
     assert version.dataset_id == dataset_id
-    assert version.status == DatasetVersionStatus.READY
+    assert version.status == DatasetVersionStatus.DRAFT
+    assert version.analytics is None
 
 
 @pytest.mark.asyncio
@@ -242,59 +239,8 @@ async def test_import_json_assigns_sequential_case_positions():
     assert inserted_rows[2]["has_reference"] is False
 
     assert version.case_count == 3
-
-
-@pytest.mark.asyncio
-async def test_import_json_calculates_reference_coverage():
-    dataset_id = uuid4()
-
-    dataset = MagicMock()
-    dataset.id = dataset_id
-
-    db = build_db(
-        dataset=dataset,
-        next_version=1,
-    )
-
-    payload = DatasetImportPayload(
-        cases=[
-            DatasetImportCase(
-                input="Input 1",
-                expected_output="Output 1",
-            ),
-            DatasetImportCase(
-                input="Input 2",
-                expected_output=None,
-            ),
-            DatasetImportCase(
-                input="Input 3",
-                expected_output="Output 3",
-            ),
-            DatasetImportCase(
-                input="Input 4",
-                expected_output=None,
-            ),
-        ]
-    )
-
-    service = DatasetImportService(db)
-
-    with patch("app.services.dataset_ingestion.service.insert"):
-        version = await service.import_json(
-            dataset_id,
-            payload,
-        )
-
-    assert version.analytics is not None
-
-    assert version.analytics["case_count"] == 4
-    assert version.analytics["reference_count"] == 2
-    assert version.analytics["reference_coverage"] == 0.5
-
-    assert version.analytics["context_count"] == 0
-    assert version.analytics["context_coverage"] == 0.0
-
-    assert version.case_count == 4
+    assert version.status == DatasetVersionStatus.DRAFT
+    assert version.analytics is None
 
 
 @pytest.mark.asyncio
@@ -490,9 +436,8 @@ async def test_import_json_calculates_context_capability():
         False,
     ]
 
-    assert version.analytics is not None
-    assert version.analytics["context_count"] == 3
-    assert version.analytics["context_coverage"] == 0.75
+    assert version.status == DatasetVersionStatus.DRAFT
+    assert version.analytics is None
 
 
 @pytest.mark.asyncio

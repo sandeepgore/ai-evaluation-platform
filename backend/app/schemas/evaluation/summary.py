@@ -87,6 +87,11 @@ class EvaluationRunPerformanceResponse(BaseModel):
 
     throughput_cases_per_second: float | None = Field(None, ge=0)
 
+    total_results: int = Field(ge=0)
+    completed_cases: int = Field(ge=0)
+    failed_cases: int = Field(ge=0)
+    not_applicable_cases: int = Field(ge=0)
+
     cost: EvaluationRunCostResponse
 
 
@@ -105,5 +110,6 @@ class EvaluationRunSummaryResponse(BaseModel):
     total_results: int = Field(ge=0)
     completed_cases: int = Field(ge=0)
     failed_cases: int = Field(ge=0)
+    not_applicable_cases: int = Field(ge=0)
 
     performance: EvaluationRunPerformanceResponse

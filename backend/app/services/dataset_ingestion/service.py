@@ -12,8 +12,6 @@ from app.models.dataset_version import DatasetVersion
 from app.models.dataset_version.version import DatasetVersionStatus
 from app.schemas.dataset_ingestion.dataset_import import DatasetImportPayload
 
-from .analytics import DatasetAnalyticsAccumulator
-
 
 class DatasetImportService:
     def __init__(self, db: AsyncSession):
@@ -73,8 +71,6 @@ class DatasetImportService:
 
             self.db.add(version)
 
-            analytics = DatasetAnalyticsAccumulator()
-
             batch: list[dict] = []
 
             for position, imported_case in enumerate(payload.cases):
@@ -99,11 +95,6 @@ class DatasetImportService:
                             if any(isinstance(item, str) and item.strip() for item in value):
                                 has_context = True
                                 break
-
-                analytics.observe(
-                    has_reference=has_reference,
-                    has_context=has_context,
-                )
 
                 batch.append(
                     {
@@ -133,11 +124,10 @@ class DatasetImportService:
                     batch,
                 )
 
-            analytics_data = analytics.to_dict()
-
-            version.case_count = analytics.case_count
-            version.analytics = analytics_data
-            version.status = DatasetVersionStatus.READY
+            # Imported cases remain part of a draft dataset version.
+            # Analytics and readiness are calculated when the version
+            # is explicitly finalized.
+            version.case_count = len(payload.cases)
 
             await self.db.commit()
             await self.db.refresh(version)
