@@ -62,6 +62,7 @@ class EvaluationResultService:
                 EvaluationResult.is_active.is_(True),
             )
         )
+
         return result.scalar_one_or_none()
 
     @staticmethod
@@ -74,7 +75,7 @@ class EvaluationResultService:
             raise ValueError("Evaluation result is inactive")
 
         for field, value in fields.items():
-            if value is not None and hasattr(result, field):
+            if hasattr(result, field):
                 setattr(result, field, value)
 
         await db.commit()
@@ -113,12 +114,20 @@ class EvaluationResultService:
             )
             .label("completed"),
             func.count(EvaluationResult.id)
-            .filter(EvaluationResult.status == "failed")
+            .filter(
+                EvaluationResult.status == "failed",
+            )
             .label("failed"),
             func.count(EvaluationResult.id)
-            .filter(EvaluationResult.status == "pending")
+            .filter(
+                EvaluationResult.status == "pending",
+            )
             .label("pending"),
-            func.count(EvaluationResult.id).filter(*case_not_applicable).label("not_applicable"),
+            func.count(EvaluationResult.id)
+            .filter(
+                *case_not_applicable,
+            )
+            .label("not_applicable"),
         ).where(
             EvaluationResult.evaluation_run_id == evaluation_run_id,
             EvaluationResult.is_active.is_(True),
@@ -150,9 +159,15 @@ class EvaluationResultService:
         ]
 
         if status_filter is not None:
-            conditions.append(EvaluationResult.status == status_filter)
+            conditions.append(
+                EvaluationResult.status == status_filter,
+            )
 
-        total_query = select(func.count(EvaluationResult.id)).where(*conditions)
+        total_query = select(
+            func.count(EvaluationResult.id),
+        ).where(
+            *conditions,
+        )
 
         total_result = await db.execute(total_query)
         total = total_result.scalar_one()
@@ -172,3 +187,36 @@ class EvaluationResultService:
             items=[EvaluationResultResponse.model_validate(item) for item in items],
             total=total,
         )
+
+    @staticmethod
+    async def get_by_run_and_case(
+        db: AsyncSession,
+        evaluation_run_id: UUID,
+        dataset_case_id: UUID,
+    ) -> EvaluationResult | None:
+        result = await db.execute(
+            select(EvaluationResult).where(
+                EvaluationResult.evaluation_run_id == evaluation_run_id,
+                EvaluationResult.dataset_case_id == dataset_case_id,
+                EvaluationResult.is_active.is_(True),
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def list_retryable_by_run(
+        db: AsyncSession,
+        evaluation_run_id: UUID,
+    ) -> list[EvaluationResult]:
+        result = await db.execute(
+            select(EvaluationResult)
+            .where(
+                EvaluationResult.evaluation_run_id == evaluation_run_id,
+                EvaluationResult.is_active.is_(True),
+                EvaluationResult.status.in_(("pending", "failed")),
+            )
+            .order_by(EvaluationResult.created_at.asc())
+        )
+
+        return list(result.scalars().all())

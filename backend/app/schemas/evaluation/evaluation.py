@@ -5,8 +5,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.evaluation import EvaluationRunStatus
-from app.shared.enums import DataPolicy
 from app.models.evaluation.evaluation_type import EvaluationType
+from app.shared.enums import DataPolicy
 
 
 class DataPolicyConfiguration(BaseModel):

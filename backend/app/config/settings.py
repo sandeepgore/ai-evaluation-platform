@@ -29,6 +29,17 @@ class Settings(BaseSettings):
     dataset_insert_batch_size: int = 2_000
     model_gateway_timeout: int = 60
 
+    evaluation_worker_threads: int = 2
+
+    evaluation_queue_stream: str = "evaluation:runs"
+    evaluation_queue_group: str = "evaluation-workers"
+    evaluation_queue_claim_timeout_seconds: int = 300
+
+    evaluation_log_directory: str = "logs"
+    evaluation_log_retention_days: int = 3
+
+    scheduler_poll_interval_seconds: int = 3600
+
     # ------------------------------------------------------------------
     # Evaluation defaults
     # ------------------------------------------------------------------
