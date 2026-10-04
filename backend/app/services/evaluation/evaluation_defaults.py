@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from app.shared.enums import DataPolicy
 from app.services.evaluation.dataset_capability import DatasetCapabilities
 from app.services.evaluation.evaluation_data_requirements import (
     DataRequirement,
     EvaluationDataRequirementEvaluator,
 )
+from app.shared.enums import DataPolicy
 
 
 @dataclass(frozen=True)

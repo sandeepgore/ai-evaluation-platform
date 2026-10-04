@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.settings import settings
 from app.db.redis import get_redis
 from app.db.session import get_db
+from app.models.evaluation.evaluation_run import EvaluationRunStatus
 from app.schemas.evaluation import (
     EvaluationRunCreate,
     EvaluationRunResponse,
@@ -23,6 +25,7 @@ from app.services.evaluation_engine.summary import EvaluationRunSummaryService
 from app.services.evaluation_engine.summary_persistence import (
     EvaluationSummaryPersistenceService,
 )
+from app.services.evaluation_queue.evaluation_queue import EvaluationQueue
 from app.services.evaluators import create_default_registry
 from app.services.evaluators.applicability import (
     EvaluatorApplicabilityService,
@@ -242,26 +245,32 @@ async def execute_evaluation_run(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    evaluator_registry = create_default_registry()
+    run = await EvaluationRunService.get_by_id(db, run_id)
 
-    applicability_service = EvaluatorApplicabilityService(
-        evaluator_registry,
-    )
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation run not found",
+        )
 
-    scoring_service = ScoringService()
+    if run.status != EvaluationRunStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"Evaluation run cannot be executed from status '{run.status.value}'."),
+        )
 
-    scoring_configuration_service = ScoringConfigurationService(
+    queue = EvaluationQueue(
         redis=redis,
+        stream=settings.evaluation_queue_stream,
+        group=settings.evaluation_queue_group,
     )
 
-    engine = EvaluationEngine(
-        db=db,
-        model_gateway=None,
-        evaluator_registry=evaluator_registry,
-        applicability_service=applicability_service,
-        scoring_service=scoring_service,
-        scoring_configuration_service=scoring_configuration_service,
-        redis=redis,
-    )
+    try:
+        await queue.enqueue(run.id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Evaluation queue is unavailable.",
+        ) from exc
 
-    return await engine.execute(run_id)
+    return run

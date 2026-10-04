@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dataset_version import DatasetVersion
@@ -73,6 +73,8 @@ class EvaluationRunService:
     async def create(
         db: AsyncSession,
         data: EvaluationRunCreate,
+        *,
+        commit: bool = True,
     ) -> EvaluationRun:
         # --------------------------------------------------------------
         # Verify dataset version exists
@@ -142,8 +144,9 @@ class EvaluationRunService:
 
         db.add(evaluation_run)
 
-        await db.commit()
-        await db.refresh(evaluation_run)
+        if commit:
+            await db.commit()
+            await db.refresh(evaluation_run)
 
         return evaluation_run
 
@@ -219,3 +222,53 @@ class EvaluationRunService:
 
         run.is_active = False
         await db.commit()
+
+    @staticmethod
+    async def claim_pending(
+        db: AsyncSession,
+        run_id: UUID,
+    ) -> EvaluationRun | None:
+        result = await db.execute(
+            update(EvaluationRun)
+            .where(
+                EvaluationRun.id == run_id,
+                EvaluationRun.status == EvaluationRunStatus.PENDING,
+                EvaluationRun.is_active.is_(True),
+            )
+            .values(
+                status=EvaluationRunStatus.RUNNING,
+            )
+        )
+
+        if result.rowcount != 1:
+            return None
+
+        await db.commit()
+
+        return await EvaluationRunService.get_by_id(
+            db,
+            run_id,
+        )
+
+    @staticmethod
+    async def get_running_for_recovery(
+        db: AsyncSession,
+        run_id: UUID,
+    ) -> EvaluationRun | None:
+        """
+        Return an active RUNNING evaluation run for recovery.
+
+        Recovery does not perform a status transition.
+        Redis determines that the queue message is stale,
+        while PostgreSQL remains the source of truth for
+        whether the run is still recoverable.
+        """
+        result = await db.execute(
+            select(EvaluationRun).where(
+                EvaluationRun.id == run_id,
+                EvaluationRun.status == EvaluationRunStatus.RUNNING,
+                EvaluationRun.is_active.is_(True),
+            )
+        )
+
+        return result.scalar_one_or_none()

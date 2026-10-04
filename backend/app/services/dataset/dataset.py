@@ -5,8 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dataset.dataset import Dataset
-from app.schemas.dataset.dataset import DatasetCreate, DatasetUpdate
 from app.models.dataset_version.version import DatasetVersion
+from app.schemas.dataset.dataset import DatasetCreate, DatasetUpdate
 
 
 class DatasetService:

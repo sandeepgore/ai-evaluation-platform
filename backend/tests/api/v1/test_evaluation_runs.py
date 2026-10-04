@@ -230,17 +230,18 @@ def test_delete_evaluation_run():
 def test_execute_evaluation_run():
     run = create_fake_run()
 
-    completed_run = create_fake_run()
-    completed_run.id = run.id
-    completed_run.status = EvaluationRunStatus.COMPLETED
-    completed_run.completed_cases = 1
+    mock_queue = MagicMock()
+    mock_queue.enqueue = AsyncMock()
 
-    mock_engine = MagicMock()
-    mock_engine.execute = AsyncMock(return_value=completed_run)
-
-    with patch(
-        "app.api.v1.evaluation.evaluation.EvaluationEngine",
-        return_value=mock_engine,
+    with (
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationRunService.get_by_id",
+            new=AsyncMock(return_value=run),
+        ),
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationQueue",
+            return_value=mock_queue,
+        ),
     ):
         response = client.post(f"/api/v1/evaluation-runs/{run.id}/execute")
 
@@ -249,10 +250,9 @@ def test_execute_evaluation_run():
     data = response.json()
 
     assert data["id"] == str(run.id)
-    assert data["status"] == EvaluationRunStatus.COMPLETED.value
-    assert data["completed_cases"] == 1
+    assert data["status"] == EvaluationRunStatus.PENDING.value
 
-    mock_engine.execute.assert_awaited_once_with(run.id)
+    mock_queue.enqueue.assert_awaited_once_with(run.id)
 
 
 def test_get_evaluation_run_summary():

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
+from app.models.evaluation_result.evaluation_result import EvaluationResult
 from app.models.model import Model
 from app.schemas.model_gateway.batch_response import BatchModelResponse
 from app.schemas.model_gateway.response import ModelResponse
@@ -95,6 +96,7 @@ class EvaluationEngine:
     - Generate optional final LLM qualitative feedback.
     - Persist run summaries and cache them in Redis.
     - Maintain run lifecycle state and timing.
+    - Resume interrupted runs by executing only pending/failed cases.
     """
 
     def __init__(
@@ -161,14 +163,7 @@ class EvaluationEngine:
         dataset_capabilities: DatasetCapabilities,
         llm_available: bool = False,
     ) -> EvaluationCapabilities:
-        """Determine capabilities available to the evaluation run.
-
-        Run-level capabilities indicate whether a required input exists
-        anywhere in the dataset.
-
-        Individual case availability is handled separately by
-        CaseEligibilityEvaluator.
-        """
+        """Determine capabilities available to the evaluation run."""
         evaluation_type = run.evaluation_type.value
 
         available_inputs = {"actual_output"}
@@ -508,11 +503,7 @@ class EvaluationEngine:
         model: Model,
         run: EvaluationRun,
     ) -> dict[str, Any]:
-        """Build the configuration passed to the model gateway.
-
-        Prompt configuration is intentionally excluded because prompt
-        resolution belongs to the evaluation engine.
-        """
+        """Build the configuration passed to the model gateway."""
         configuration: dict[str, Any] = {}
 
         if model.configuration:
@@ -588,8 +579,117 @@ class EvaluationEngine:
         return any(decision.eligible for decision in eligibility.values())
 
     # ------------------------------------------------------------------
-    # Case evaluation
+    # Retry / recovery selection
     # ------------------------------------------------------------------
+
+    async def _select_cases_for_execution(
+        self,
+        *,
+        run: EvaluationRun,
+        cases: list[Any],
+        retry: bool,
+    ) -> list[Any]:
+        """Select cases that should actually execute.
+
+        Normal execution:
+            Every dataset case is eligible for processing.
+
+        Retry/recovery:
+            Only cases whose persisted result is pending or failed are
+            retried, plus cases with no persisted result.
+
+        Existing completed results are never retried. This includes
+        case-level N/A results because those are persisted as completed
+        with ``scores.overall.status = not_applicable``.
+        """
+        if not retry:
+            return cases
+
+        result = await self.db.execute(
+            select(EvaluationResult).where(
+                EvaluationResult.evaluation_run_id == run.id,
+                EvaluationResult.is_active.is_(True),
+            )
+        )
+
+        existing_results = {
+            evaluation_result.dataset_case_id: evaluation_result
+            for evaluation_result in result.scalars().all()
+        }
+
+        retryable_cases: list[Any] = []
+
+        for case in cases:
+            evaluation_result = existing_results.get(case.id)
+
+            if evaluation_result is None:
+                retryable_cases.append(case)
+                continue
+
+            if evaluation_result.status in {
+                "pending",
+                "failed",
+            }:
+                retryable_cases.append(case)
+
+        return retryable_cases
+
+    async def _restore_run_counters(
+        self,
+        *,
+        run: EvaluationRun,
+        total_cases: int,
+    ) -> None:
+        """Restore run counters from persisted evaluation results.
+
+        Case-level N/A is intentionally excluded from completed_cases.
+        """
+        result = await self.db.execute(
+            select(EvaluationResult).where(
+                EvaluationResult.evaluation_run_id == run.id,
+                EvaluationResult.is_active.is_(True),
+            )
+        )
+
+        completed_cases = 0
+        failed_cases = 0
+
+        for evaluation_result in result.scalars().all():
+            if evaluation_result.status == "failed":
+                failed_cases += 1
+                continue
+
+            if evaluation_result.status != "completed":
+                continue
+
+            scores = evaluation_result.scores or {}
+            overall = scores.get("overall") or {}
+
+            if overall.get("status") == "not_applicable":
+                continue
+
+            completed_cases += 1
+
+        run.total_cases = total_cases
+        run.completed_cases = completed_cases
+        run.failed_cases = failed_cases
+
+    # ------------------------------------------------------------------
+    # Case result persistence
+    # ------------------------------------------------------------------
+
+    async def _get_existing_result(
+        self,
+        *,
+        run: EvaluationRun,
+        case: Any,
+    ) -> EvaluationResult | None:
+        """Return the existing active result for a run/case pair."""
+        return await EvaluationResultService.get_by_run_and_case(
+            self.db,
+            evaluation_run_id=run.id,
+            dataset_case_id=case.id,
+        )
 
     async def _save_not_applicable_case(
         self,
@@ -598,17 +698,33 @@ class EvaluationEngine:
         case: Any,
         evaluator_configs: list[tuple[Evaluator, float]],
         eligibility: dict[str, CaseEligibilityDecision],
+        retry: bool = False,
     ) -> None:
         """Persist a case where no selected evaluator is applicable.
 
-        The case is persisted as a completed result for traceability, with
-        an overall status of ``not_applicable``.
+        Fresh execution always creates the result.
 
-        It is intentionally excluded from ``run.completed_cases`` because
-        no evaluation was performed.
-
-        No model inference is performed.
+        During retry, an existing completed/N/A result is left untouched.
         """
+
+        existing_result = None
+
+        if retry:
+            existing_result = await self._get_existing_result(
+                run=run,
+                case=case,
+            )
+
+            if existing_result is not None:
+                scores = existing_result.scores or {}
+                overall = scores.get("overall") or {}
+
+                if (
+                    existing_result.status == "completed"
+                    and overall.get("status") == "not_applicable"
+                ):
+                    return
+
         scores: dict[str, dict[str, Any]] = {}
 
         for evaluator, _weight in evaluator_configs:
@@ -633,25 +749,45 @@ class EvaluationEngine:
             },
         }
 
-        evaluation_result = await EvaluationResultService.create(
-            self.db,
-            evaluation_run_id=run.id,
-            dataset_case_id=case.id,
-            status="completed",
-            actual_output=None,
-            expected_output=case.expected_output,
-            scores=scores,
-            feedback=None,
-            trace={
-                "evaluation": "not_applicable",
-                "model_called": False,
-            },
-            latency_ms=None,
-            input_tokens=None,
-            output_tokens=None,
-            total_tokens=None,
-            error_message=None,
-        )
+        if existing_result is None:
+            evaluation_result = await EvaluationResultService.create(
+                self.db,
+                evaluation_run_id=run.id,
+                dataset_case_id=case.id,
+                status="completed",
+                actual_output=None,
+                expected_output=case.expected_output,
+                scores=scores,
+                feedback=None,
+                trace={
+                    "evaluation": "not_applicable",
+                    "model_called": False,
+                },
+                latency_ms=None,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                error_message=None,
+            )
+        else:
+            evaluation_result = await EvaluationResultService.update(
+                self.db,
+                existing_result,
+                status="completed",
+                actual_output=None,
+                expected_output=case.expected_output,
+                scores=scores,
+                feedback=None,
+                trace={
+                    "evaluation": "not_applicable",
+                    "model_called": False,
+                },
+                latency_ms=None,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                error_message=None,
+            )
 
         if self.feedback_aggregation_service is not None and evaluation_result.feedback:
             try:
@@ -672,13 +808,14 @@ class EvaluationEngine:
         evaluator_configs: list[tuple[Evaluator, float]],
         scoring_configuration: dict[str, Any],
         eligibility: dict[str, CaseEligibilityDecision] | None = None,
+        retry: bool = False,
     ) -> None:
         """Evaluate and persist one successful model response.
 
-        Eligibility is calculated before model execution and passed into
-        this method so the same decisions are reused.
+        Fresh execution creates a new result.
 
-        N/A metrics are excluded from weighted scoring.
+        During retry, an existing pending/failed result is updated
+        instead of creating a duplicate row.
         """
         if eligibility is None:
             eligibility = self._evaluate_case_eligibility(
@@ -774,22 +911,47 @@ class EvaluationEngine:
 
         feedback = "\n".join(feedback_messages) if feedback_messages else None
 
-        evaluation_result = await EvaluationResultService.create(
-            self.db,
-            evaluation_run_id=run.id,
-            dataset_case_id=case.id,
-            status="completed",
-            actual_output=response.output,
-            expected_output=case.expected_output,
-            scores=scores,
-            feedback=feedback,
-            trace=response.trace,
-            latency_ms=int(response.latency_ms),
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            total_tokens=response.total_tokens,
-            error_message=None,
-        )
+        existing_result = None
+
+        if retry:
+            existing_result = await self._get_existing_result(
+                run=run,
+                case=case,
+            )
+
+        if existing_result is None:
+            evaluation_result = await EvaluationResultService.create(
+                self.db,
+                evaluation_run_id=run.id,
+                dataset_case_id=case.id,
+                status="completed",
+                actual_output=response.output,
+                expected_output=case.expected_output,
+                scores=scores,
+                feedback=feedback,
+                trace=response.trace,
+                latency_ms=int(response.latency_ms),
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+                total_tokens=response.total_tokens,
+                error_message=None,
+            )
+        else:
+            evaluation_result = await EvaluationResultService.update(
+                self.db,
+                existing_result,
+                status="completed",
+                actual_output=response.output,
+                expected_output=case.expected_output,
+                scores=scores,
+                feedback=feedback,
+                trace=response.trace,
+                latency_ms=int(response.latency_ms),
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+                total_tokens=response.total_tokens,
+                error_message=None,
+            )
 
         if self.feedback_aggregation_service is not None and evaluation_result.feedback:
             try:
@@ -809,28 +971,62 @@ class EvaluationEngine:
         run: EvaluationRun,
         case: Any,
         exc: Exception,
+        retry: bool = False,
     ) -> None:
-        """Persist a failed evaluation case."""
+        """Persist a failed evaluation case.
+
+        Fresh execution creates a new result.
+
+        During retry, an existing pending/failed result is updated
+        instead of inserting a duplicate row.
+        """
         error_message = f"{type(exc).__name__}: {str(exc) or repr(exc)}"
 
-        await EvaluationResultService.create(
-            self.db,
-            evaluation_run_id=run.id,
-            dataset_case_id=case.id,
-            status="failed",
-            actual_output=None,
-            expected_output=case.expected_output,
-            scores={},
-            feedback=None,
-            trace={
-                "error_type": type(exc).__name__,
-            },
-            latency_ms=None,
-            input_tokens=None,
-            output_tokens=None,
-            total_tokens=None,
-            error_message=error_message,
-        )
+        existing_result = None
+
+        if retry:
+            existing_result = await self._get_existing_result(
+                run=run,
+                case=case,
+            )
+
+        if existing_result is None:
+            await EvaluationResultService.create(
+                self.db,
+                evaluation_run_id=run.id,
+                dataset_case_id=case.id,
+                status="failed",
+                actual_output=None,
+                expected_output=case.expected_output,
+                scores={},
+                feedback=None,
+                trace={
+                    "error_type": type(exc).__name__,
+                },
+                latency_ms=None,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                error_message=error_message,
+            )
+        else:
+            await EvaluationResultService.update(
+                self.db,
+                existing_result,
+                status="failed",
+                actual_output=None,
+                expected_output=case.expected_output,
+                scores={},
+                feedback=None,
+                trace={
+                    "error_type": type(exc).__name__,
+                },
+                latency_ms=None,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                error_message=error_message,
+            )
 
         run.failed_cases += 1
 
@@ -869,13 +1065,9 @@ class EvaluationEngine:
         model_gateway: ModelGateway,
         scoring_configuration: dict[str, Any],
         prompt_config: Any = None,
+        retry: bool = False,
     ) -> None:
-        """Execute cases one at a time.
-
-        Case eligibility is evaluated before inference.
-        Cases with no applicable evaluator are persisted as N/A without
-        calling the model.
-        """
+        """Execute cases one at a time."""
         configuration = self._build_configuration(
             model=model,
             run=run,
@@ -896,6 +1088,7 @@ class EvaluationEngine:
                         case=case,
                         evaluator_configs=evaluator_configs,
                         eligibility=eligibility,
+                        retry=retry,
                     )
                     continue
 
@@ -916,6 +1109,7 @@ class EvaluationEngine:
                     evaluator_configs=evaluator_configs,
                     scoring_configuration=scoring_configuration,
                     eligibility=eligibility,
+                    retry=retry,
                 )
 
             except Exception as exc:
@@ -923,6 +1117,7 @@ class EvaluationEngine:
                     run=run,
                     case=case,
                     exc=exc,
+                    retry=retry,
                 )
 
         await self.db.commit()
@@ -942,17 +1137,9 @@ class EvaluationEngine:
         batch_size: int,
         scoring_configuration: dict[str, Any],
         prompt_config: Any = None,
+        retry: bool = False,
     ) -> None:
-        """Execute cases in batches.
-
-        Eligibility is resolved before model execution.
-
-        Cases with no applicable evaluator are persisted as N/A and
-        excluded from model inference.
-
-        Eligible cases are then resolved into prompts and sent through
-        the existing batch gateway abstraction.
-        """
+        """Execute cases in batches."""
         configuration = self._build_configuration(
             model=model,
             run=run,
@@ -987,6 +1174,7 @@ class EvaluationEngine:
                             case=case,
                             evaluator_configs=evaluator_configs,
                             eligibility=eligibility,
+                            retry=retry,
                         )
                         continue
 
@@ -1002,6 +1190,7 @@ class EvaluationEngine:
                         run=run,
                         case=case,
                         exc=exc,
+                        retry=retry,
                     )
 
             if not eligible_cases:
@@ -1037,6 +1226,7 @@ class EvaluationEngine:
                         run=run,
                         case=case,
                         exc=exc,
+                        retry=retry,
                     )
 
             if not prompts:
@@ -1056,6 +1246,7 @@ class EvaluationEngine:
                         run=run,
                         case=case,
                         exc=exc,
+                        retry=retry,
                     )
 
                 await self.db.commit()
@@ -1074,6 +1265,7 @@ class EvaluationEngine:
                         run=run,
                         case=case,
                         exc=batch_exc,
+                        retry=retry,
                     )
 
                 await self.db.commit()
@@ -1093,6 +1285,7 @@ class EvaluationEngine:
                         run=run,
                         case=case,
                         exc=batch_exc,
+                        retry=retry,
                     )
 
                 await self.db.commit()
@@ -1109,7 +1302,10 @@ class EvaluationEngine:
                 strict=True,
             ):
                 try:
-                    if hasattr(result, "error") and hasattr(result, "response"):
+                    if hasattr(result, "error") and hasattr(
+                        result,
+                        "response",
+                    ):
                         if result.error is not None:
                             error_type = result.error.get(
                                 "type",
@@ -1143,6 +1339,7 @@ class EvaluationEngine:
                         evaluator_configs=evaluator_configs,
                         scoring_configuration=scoring_configuration,
                         eligibility=eligibility,
+                        retry=retry,
                     )
 
                 except Exception as exc:
@@ -1150,6 +1347,7 @@ class EvaluationEngine:
                         run=run,
                         case=case,
                         exc=exc,
+                        retry=retry,
                     )
 
             await self.db.commit()
@@ -1162,9 +1360,25 @@ class EvaluationEngine:
     async def execute(
         self,
         run_id: UUID,
+        *,
+        claimed: bool = False,
+        retry: bool = False,
     ) -> EvaluationRun:
-        """Execute all dataset cases belonging to an evaluation run."""
+        """Execute an evaluation run.
 
+        Normal execution:
+            PENDING -> RUNNING -> COMPLETED/FAILED
+
+        Retry/recovery:
+            Existing RUNNING run resumes only pending/failed cases.
+
+        ``claimed=True`` is used by the worker after the run has already
+        been atomically claimed from PENDING -> RUNNING.
+
+        ``retry=True`` is used when a worker is deliberately resuming an
+        interrupted run. In retry mode, completed and case-level N/A
+        results are never executed again.
+        """
         run = await EvaluationRunService.get_by_id(
             self.db,
             run_id,
@@ -1176,7 +1390,7 @@ class EvaluationEngine:
                 detail="Evaluation run not found.",
             )
 
-        if run.status == EvaluationRunStatus.RUNNING:
+        if run.status == EvaluationRunStatus.RUNNING and not claimed:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Evaluation run is already running.",
@@ -1377,53 +1591,78 @@ class EvaluationEngine:
                 detail=exc.detail,
             ) from exc
 
-        cases = await DatasetCaseService.list(
+        all_cases = await DatasetCaseService.list(
             self.db,
             run.dataset_version_id,
         )
 
-        run.total_cases = len(cases)
-        run.completed_cases = 0
-        run.failed_cases = 0
+        cases = await self._select_cases_for_execution(
+            run=run,
+            cases=all_cases,
+            retry=retry,
+        )
+
+        if retry:
+            await self._restore_run_counters(
+                run=run,
+                total_cases=len(all_cases),
+            )
+        else:
+            run.total_cases = len(all_cases)
+            run.completed_cases = 0
+            run.failed_cases = 0
 
         scoring_configuration = await self.scoring_configuration_service.get(
             self.db,
             run.id,
         )
 
-        started_at = self._utc_now()
+        if retry:
+            # Recovery must preserve the original start time.
+            started_at = run.started_at or self._utc_now()
 
-        run.started_at = started_at
-        run.completed_at = None
-        run.duration_ms = None
-        run.status = EvaluationRunStatus.RUNNING
+            if run.started_at is None:
+                run.started_at = started_at
+
+        else:
+            started_at = self._utc_now()
+
+            run.started_at = started_at
+            run.completed_at = None
+            run.duration_ms = None
+
+        if not claimed:
+            run.status = EvaluationRunStatus.RUNNING
 
         await self.db.commit()
         await self.db.refresh(run)
 
         try:
-            if execution_mode == "sequential":
-                await self._execute_sequential(
-                    run=run,
-                    cases=cases,
-                    model=model,
-                    evaluator_configs=evaluator_configs,
-                    model_gateway=model_gateway,
-                    scoring_configuration=scoring_configuration,
-                    prompt_config=prompt_config,
-                )
+            if cases:
+                if execution_mode == "sequential":
+                    await self._execute_sequential(
+                        run=run,
+                        cases=cases,
+                        model=model,
+                        evaluator_configs=evaluator_configs,
+                        model_gateway=model_gateway,
+                        scoring_configuration=scoring_configuration,
+                        prompt_config=prompt_config,
+                        retry=retry,
+                    )
 
-            elif execution_mode == "batch":
-                await self._execute_batch(
-                    run=run,
-                    cases=cases,
-                    model=model,
-                    evaluator_configs=evaluator_configs,
-                    model_gateway=model_gateway,
-                    batch_size=batch_size,
-                    scoring_configuration=scoring_configuration,
-                    prompt_config=prompt_config,
-                )
+                elif execution_mode == "batch":
+                    await self._execute_batch(
+                        run=run,
+                        cases=cases,
+                        model=model,
+                        evaluator_configs=evaluator_configs,
+                        model_gateway=model_gateway,
+                        batch_size=batch_size,
+                        scoring_configuration=scoring_configuration,
+                        prompt_config=prompt_config,
+                        retry=retry,
+                    )
 
             final_feedback = None
 
