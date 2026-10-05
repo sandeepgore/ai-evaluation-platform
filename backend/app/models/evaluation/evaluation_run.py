@@ -89,6 +89,12 @@ class EvaluationRun(TimestampMixin, Base):
         default=0,
     )
 
+    not_applicable_cases: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
