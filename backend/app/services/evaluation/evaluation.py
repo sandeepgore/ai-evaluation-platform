@@ -165,6 +165,37 @@ class EvaluationRunService:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def get_status(
+        db: AsyncSession,
+        run_id: UUID,
+    ) -> dict | None:
+        run = await EvaluationRunService.get_by_id(
+            db,
+            run_id,
+        )
+
+        if run is None:
+            return None
+
+        processed_cases = run.completed_cases + run.failed_cases + run.not_applicable_cases
+
+        progress_percent = (processed_cases / run.total_cases) * 100 if run.total_cases > 0 else 0.0
+
+        return {
+            "id": run.id,
+            "status": run.status,
+            "total_cases": run.total_cases,
+            "completed_cases": run.completed_cases,
+            "failed_cases": run.failed_cases,
+            "not_applicable_cases": run.not_applicable_cases,
+            "processed_cases": processed_cases,
+            "progress_percent": progress_percent,
+            "started_at": run.started_at,
+            "completed_at": run.completed_at,
+            "duration_ms": run.duration_ms,
+        }
+
+    @staticmethod
     async def list(
         db: AsyncSession,
         dataset_version_id: UUID | None = None,

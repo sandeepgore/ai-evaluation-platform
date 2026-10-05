@@ -642,7 +642,8 @@ class EvaluationEngine:
     ) -> None:
         """Restore run counters from persisted evaluation results.
 
-        Case-level N/A is intentionally excluded from completed_cases.
+        Case-level N/A is intentionally excluded from completed_cases
+        and tracked separately.
         """
         result = await self.db.execute(
             select(EvaluationResult).where(
@@ -653,6 +654,7 @@ class EvaluationEngine:
 
         completed_cases = 0
         failed_cases = 0
+        not_applicable_cases = 0
 
         for evaluation_result in result.scalars().all():
             if evaluation_result.status == "failed":
@@ -666,6 +668,7 @@ class EvaluationEngine:
             overall = scores.get("overall") or {}
 
             if overall.get("status") == "not_applicable":
+                not_applicable_cases += 1
                 continue
 
             completed_cases += 1
@@ -673,6 +676,54 @@ class EvaluationEngine:
         run.total_cases = total_cases
         run.completed_cases = completed_cases
         run.failed_cases = failed_cases
+        run.not_applicable_cases = not_applicable_cases
+
+    @staticmethod
+    def _get_result_counter_state(
+        evaluation_result: EvaluationResult | None,
+    ) -> str | None:
+        """Return the run-counter state represented by a persisted result."""
+        if evaluation_result is None:
+            return None
+
+        if evaluation_result.status == "failed":
+            return "failed"
+
+        if evaluation_result.status != "completed":
+            return None
+
+        scores = evaluation_result.scores or {}
+        overall = scores.get("overall") or {}
+
+        if overall.get("status") == "not_applicable":
+            return "not_applicable"
+
+        return "completed"
+
+    @staticmethod
+    def _update_run_counters(
+        *,
+        run: EvaluationRun,
+        previous_state: str | None,
+        new_state: str,
+    ) -> None:
+        """Apply a persisted-result state transition to run counters."""
+        if previous_state == new_state:
+            return
+
+        if previous_state == "completed":
+            run.completed_cases -= 1
+        elif previous_state == "failed":
+            run.failed_cases -= 1
+        elif previous_state == "not_applicable":
+            run.not_applicable_cases -= 1
+
+        if new_state == "completed":
+            run.completed_cases += 1
+        elif new_state == "failed":
+            run.failed_cases += 1
+        elif new_state == "not_applicable":
+            run.not_applicable_cases += 1
 
     # ------------------------------------------------------------------
     # Case result persistence
@@ -706,7 +757,6 @@ class EvaluationEngine:
 
         During retry, an existing completed/N/A result is left untouched.
         """
-
         existing_result = None
 
         if retry:
@@ -788,6 +838,14 @@ class EvaluationEngine:
                 total_tokens=None,
                 error_message=None,
             )
+
+        previous_state = self._get_result_counter_state(existing_result)
+
+        self._update_run_counters(
+            run=run,
+            previous_state=previous_state,
+            new_state="not_applicable",
+        )
 
         if self.feedback_aggregation_service is not None and evaluation_result.feedback:
             try:
@@ -953,6 +1011,20 @@ class EvaluationEngine:
                 error_message=None,
             )
 
+        previous_state = self._get_result_counter_state(existing_result)
+
+        new_state = (
+            "not_applicable"
+            if (scores.get("overall") or {}).get("status") == "not_applicable"
+            else "completed"
+        )
+
+        self._update_run_counters(
+            run=run,
+            previous_state=previous_state,
+            new_state=new_state,
+        )
+
         if self.feedback_aggregation_service is not None and evaluation_result.feedback:
             try:
                 await self.feedback_aggregation_service.accept(
@@ -962,8 +1034,6 @@ class EvaluationEngine:
                 )
             except Exception:
                 pass
-
-        run.completed_cases += 1
 
     async def _save_failed_case(
         self,
@@ -1028,7 +1098,13 @@ class EvaluationEngine:
                 error_message=error_message,
             )
 
-        run.failed_cases += 1
+        previous_state = self._get_result_counter_state(existing_result)
+
+        self._update_run_counters(
+            run=run,
+            previous_state=previous_state,
+            new_state="failed",
+        )
 
     # ------------------------------------------------------------------
     # Prompt resolution
@@ -1176,6 +1252,7 @@ class EvaluationEngine:
                             eligibility=eligibility,
                             retry=retry,
                         )
+
                         continue
 
                     eligible_cases.append(
@@ -1611,6 +1688,7 @@ class EvaluationEngine:
             run.total_cases = len(all_cases)
             run.completed_cases = 0
             run.failed_cases = 0
+            run.not_applicable_cases = 0
 
         scoring_configuration = await self.scoring_configuration_service.get(
             self.db,

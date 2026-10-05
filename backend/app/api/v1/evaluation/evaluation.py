@@ -13,24 +13,16 @@ from app.schemas.evaluation import (
     EvaluationRunResponse,
     EvaluationRunUpdate,
 )
+from app.schemas.evaluation.evaluation import EvaluationRunStatusResponse
 from app.schemas.evaluation.summary import EvaluationRunSummaryResponse
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation.run_validation import EvaluationRunValidationError
 from app.services.evaluation_engine.cache import EvaluationSummaryCache
-from app.services.evaluation_engine.engine import EvaluationEngine
-from app.services.evaluation_engine.scoring_config import (
-    ScoringConfigurationService,
-)
 from app.services.evaluation_engine.summary import EvaluationRunSummaryService
 from app.services.evaluation_engine.summary_persistence import (
     EvaluationSummaryPersistenceService,
 )
 from app.services.evaluation_queue.evaluation_queue import EvaluationQueue
-from app.services.evaluators import create_default_registry
-from app.services.evaluators.applicability import (
-    EvaluatorApplicabilityService,
-)
-from app.services.scoring import ScoringService
 
 router = APIRouter(
     prefix="/evaluation-runs",
@@ -75,6 +67,28 @@ async def list_evaluation_runs(
         dataset_version_id=dataset_version_id,
         model_id=model_id,
     )
+
+
+@router.get(
+    "/{run_id}/status",
+    response_model=EvaluationRunStatusResponse,
+)
+async def get_evaluation_run_status(
+    run_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    status_response = await EvaluationRunService.get_status(
+        db,
+        run_id,
+    )
+
+    if status_response is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation run not found",
+        )
+
+    return status_response
 
 
 @router.get(
@@ -256,7 +270,7 @@ async def execute_evaluation_run(
     if run.status != EvaluationRunStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(f"Evaluation run cannot be executed from status '{run.status.value}'."),
+            detail=(f"Evaluation run cannot be executed from status '{run.status}'."),
         )
 
     queue = EvaluationQueue(

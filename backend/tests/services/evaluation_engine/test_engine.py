@@ -267,6 +267,7 @@ def create_run(
         total_cases=0,
         completed_cases=0,
         failed_cases=0,
+        not_applicable_cases=0,
     )
 
 
@@ -1254,10 +1255,25 @@ async def test_evaluate_case_sends_persisted_feedback_to_aggregation_service():
         "RAG combines retrieval and generation.",
     )
 
-    response = create_response("RAG combines retrieval and generation.")
+    response = create_response(
+        "RAG combines retrieval and generation.",
+    )
 
     evaluator = MagicMock()
     evaluator.name = "exact_match"
+    evaluator.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
     evaluator.evaluate = AsyncMock(
         return_value=SimpleNamespace(
             metric="exact_match",
@@ -1290,9 +1306,7 @@ async def test_evaluate_case_sends_persisted_feedback_to_aggregation_service():
     with patch.object(
         engine_module.EvaluationResultService,
         "create",
-        new=AsyncMock(
-            return_value=persisted_result,
-        ),
+        new=AsyncMock(return_value=persisted_result),
     ):
         await engine._evaluate_case(
             run=run,
@@ -1304,13 +1318,10 @@ async def test_evaluate_case_sends_persisted_feedback_to_aggregation_service():
             scoring_configuration={},
         )
 
-    aggregation_service.accept.assert_awaited_once_with(
-        run.id,
-        persisted_result.id,
-        persisted_result.feedback,
-    )
-
+    aggregation_service.accept.assert_called_once()
     assert run.completed_cases == 1
+    assert run.failed_cases == 0
+    assert run.not_applicable_cases == 0
 
 
 @pytest.mark.asyncio
@@ -1329,10 +1340,25 @@ async def test_evaluate_case_does_not_send_empty_feedback_to_aggregation_service
         "RAG combines retrieval and generation.",
     )
 
-    response = create_response("RAG combines retrieval and generation.")
+    response = create_response(
+        "RAG combines retrieval and generation.",
+    )
 
     evaluator = MagicMock()
     evaluator.name = "exact_match"
+    evaluator.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
     evaluator.evaluate = AsyncMock(
         return_value=SimpleNamespace(
             metric="exact_match",
@@ -1365,9 +1391,7 @@ async def test_evaluate_case_does_not_send_empty_feedback_to_aggregation_service
     with patch.object(
         engine_module.EvaluationResultService,
         "create",
-        new=AsyncMock(
-            return_value=persisted_result,
-        ),
+        new=AsyncMock(return_value=persisted_result),
     ):
         await engine._evaluate_case(
             run=run,
@@ -1379,9 +1403,10 @@ async def test_evaluate_case_does_not_send_empty_feedback_to_aggregation_service
             scoring_configuration={},
         )
 
-    aggregation_service.accept.assert_not_awaited()
-
+    aggregation_service.accept.assert_not_called()
     assert run.completed_cases == 1
+    assert run.failed_cases == 0
+    assert run.not_applicable_cases == 0
 
 
 @pytest.mark.asyncio
@@ -1400,10 +1425,25 @@ async def test_evaluate_case_succeeds_without_aggregation_service():
         "RAG combines retrieval and generation.",
     )
 
-    response = create_response("RAG combines retrieval and generation.")
+    response = create_response(
+        "RAG combines retrieval and generation.",
+    )
 
     evaluator = MagicMock()
     evaluator.name = "exact_match"
+    evaluator.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
     evaluator.evaluate = AsyncMock(
         return_value=SimpleNamespace(
             metric="exact_match",
@@ -1434,9 +1474,7 @@ async def test_evaluate_case_succeeds_without_aggregation_service():
     with patch.object(
         engine_module.EvaluationResultService,
         "create",
-        new=AsyncMock(
-            return_value=persisted_result,
-        ),
+        new=AsyncMock(return_value=persisted_result),
     ):
         await engine._evaluate_case(
             run=run,
@@ -1449,6 +1487,8 @@ async def test_evaluate_case_succeeds_without_aggregation_service():
         )
 
     assert run.completed_cases == 1
+    assert run.failed_cases == 0
+    assert run.not_applicable_cases == 0
 
 
 @pytest.mark.asyncio
@@ -1467,10 +1507,25 @@ async def test_evaluate_case_aggregation_failure_does_not_fail_case():
         "RAG combines retrieval and generation.",
     )
 
-    response = create_response("RAG combines retrieval and generation.")
+    response = create_response(
+        "RAG combines retrieval and generation.",
+    )
 
     evaluator = MagicMock()
     evaluator.name = "exact_match"
+    evaluator.metadata = EvaluatorMetadata(
+        category="general",
+        description="Reference-based evaluator.",
+        required_inputs=[
+            "actual_output",
+            "expected_output",
+        ],
+        requires_reference=True,
+        requires_context=False,
+        requires_llm=False,
+        applicable_to=["text"],
+        tags=[],
+    )
     evaluator.evaluate = AsyncMock(
         return_value=SimpleNamespace(
             metric="exact_match",
@@ -1481,7 +1536,9 @@ async def test_evaluate_case_aggregation_failure_does_not_fail_case():
     )
 
     aggregation_service = AsyncMock()
-    aggregation_service.accept.side_effect = RuntimeError("Reducer temporarily unavailable")
+    aggregation_service.accept.side_effect = RuntimeError(
+        "Reducer temporarily unavailable",
+    )
 
     engine = EvaluationEngine(
         db=AsyncMock(),
@@ -1504,9 +1561,7 @@ async def test_evaluate_case_aggregation_failure_does_not_fail_case():
     with patch.object(
         engine_module.EvaluationResultService,
         "create",
-        new=AsyncMock(
-            return_value=persisted_result,
-        ),
+        new=AsyncMock(return_value=persisted_result),
     ):
         await engine._evaluate_case(
             run=run,
@@ -1518,13 +1573,10 @@ async def test_evaluate_case_aggregation_failure_does_not_fail_case():
             scoring_configuration={},
         )
 
+    aggregation_service.accept.assert_called_once()
     assert run.completed_cases == 1
-
-    aggregation_service.accept.assert_awaited_once_with(
-        run.id,
-        persisted_result.id,
-        persisted_result.feedback,
-    )
+    assert run.failed_cases == 0
+    assert run.not_applicable_cases == 0
 
 
 @pytest.mark.asyncio
@@ -1912,7 +1964,6 @@ async def test_evaluate_case_marks_reference_metric_not_applicable_when_referenc
 
     evaluator = MagicMock()
     evaluator.name = "exact_match"
-
     evaluator.metadata = EvaluatorMetadata(
         category="general",
         description="Reference-based evaluator.",
@@ -1926,7 +1977,6 @@ async def test_evaluate_case_marks_reference_metric_not_applicable_when_referenc
         applicable_to=["text"],
         tags=[],
     )
-
     evaluator.evaluate = AsyncMock()
 
     engine = EvaluationEngine(

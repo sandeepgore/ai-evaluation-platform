@@ -46,6 +46,7 @@ class EvaluationRunUpdate(BaseModel):
     total_cases: int | None = Field(None, ge=0)
     completed_cases: int | None = Field(None, ge=0)
     failed_cases: int | None = Field(None, ge=0)
+    not_applicable_cases: int | None = Field(None, ge=0)
     is_active: bool | None = None
 
 
@@ -60,6 +61,7 @@ class EvaluationRunResponse(BaseModel):
     total_cases: int
     completed_cases: int
     failed_cases: int
+    not_applicable_cases: int
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -69,3 +71,17 @@ class EvaluationRunResponse(BaseModel):
     duration_ms: int | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EvaluationRunStatusResponse(BaseModel):
+    id: UUID
+    status: EvaluationRunStatus
+    total_cases: int
+    completed_cases: int
+    failed_cases: int
+    not_applicable_cases: int
+    processed_cases: int
+    progress_percent: float
+    started_at: datetime | None
+    completed_at: datetime | None
+    duration_ms: int | None
