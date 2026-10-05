@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation.evaluation_type import EvaluationType
 from app.shared.enums import DataPolicy
 
@@ -35,6 +36,7 @@ class EvaluationRunCreate(BaseModel):
     model_id: UUID
     name: str = Field(..., min_length=1, max_length=150)
     evaluation_type: EvaluationType = EvaluationType.TEXT
+    mode: EvaluationRunMode = EvaluationRunMode.DEFAULT
     configuration: dict[str, Any] | None = None
 
 
@@ -56,6 +58,7 @@ class EvaluationRunResponse(BaseModel):
     model_id: UUID
     name: str
     status: EvaluationRunStatus
+    mode: EvaluationRunMode
     evaluation_type: EvaluationType
     configuration: dict[str, Any] | None
     total_cases: int

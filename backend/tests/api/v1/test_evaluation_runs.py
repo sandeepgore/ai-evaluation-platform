@@ -4,14 +4,15 @@ from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from app.services.evaluation.run_validation import EvaluationRunValidationError
 import pytest
 from fastapi.testclient import TestClient
 
 from app.db.redis import get_redis
 from app.main import app
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation.evaluation_type import EvaluationType
+from app.services.evaluation.run_validation import EvaluationRunValidationError
 
 client = TestClient(app)
 
@@ -24,6 +25,7 @@ def create_fake_run():
         model_id=uuid4(),
         name="API Test Evaluation",
         status=EvaluationRunStatus.PENDING,
+        mode=EvaluationRunMode.DEFAULT,
         configuration={
             "evaluators": ["exact_match", "f1"],
             "scoring": {
@@ -81,6 +83,7 @@ def test_create_evaluation_run():
     assert data["id"] == str(run.id)
     assert data["name"] == "API Test Evaluation"
     assert data["status"] == run.status.value
+    assert data["mode"] == EvaluationRunMode.DEFAULT.value
     assert data["total_cases"] == 1
 
 

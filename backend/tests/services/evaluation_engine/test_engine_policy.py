@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.services.evaluation.evaluation_data_requirements import DataRequirement
 from app.services.evaluation.run_validation import (
     EvaluationRunValidationError,
@@ -24,6 +25,7 @@ def create_run(
         model_id=uuid4(),
         dataset_version_id=uuid4(),
         evaluation_type=SimpleNamespace(value=evaluation_type),
+        mode=EvaluationRunMode.DEFAULT,
         configuration=configuration or {},
         status=EvaluationRunStatus.PENDING,
         total_cases=0,
