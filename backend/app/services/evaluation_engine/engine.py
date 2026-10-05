@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation_result.evaluation_result import EvaluationResult
 from app.models.model import Model
 from app.schemas.model_gateway.batch_response import BatchModelResponse
@@ -203,17 +204,10 @@ class EvaluationEngine:
         """Resolve and validate evaluators configured for the evaluation run."""
         evaluation_type = run.evaluation_type.value
 
-        evaluator_config: list[str | dict[str, Any]]
-
-        if run.configuration:
-            configured_evaluators = run.configuration.get(
+        if run.mode == EvaluationRunMode.ADVANCED:
+            evaluator_config = (run.configuration or {}).get(
                 "evaluators",
             )
-        else:
-            configured_evaluators = None
-
-        if configured_evaluators:
-            evaluator_config = configured_evaluators
         else:
             evaluator_config = DefaultEvaluationResolver.resolve(
                 evaluation_type,

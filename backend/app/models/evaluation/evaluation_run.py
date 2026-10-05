@@ -1,9 +1,10 @@
+import uuid
 from datetime import datetime
 from enum import Enum
-import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, JSON, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +19,11 @@ class EvaluationRunStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class EvaluationRunMode(str, Enum):
+    DEFAULT = "default"
+    ADVANCED = "advanced"
 
 
 class EvaluationRun(TimestampMixin, Base):
@@ -64,6 +70,12 @@ class EvaluationRun(TimestampMixin, Base):
         String(20),
         nullable=False,
         default=EvaluationRunStatus.PENDING,
+    )
+
+    mode: Mapped[EvaluationRunMode] = mapped_column(
+        String(20),
+        nullable=False,
+        default=EvaluationRunMode.DEFAULT,
     )
 
     configuration: Mapped[dict[str, Any] | None] = mapped_column(

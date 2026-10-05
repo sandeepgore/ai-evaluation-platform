@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation.evaluation_type import EvaluationType
 from app.schemas.model_gateway import ModelResponse
 from app.schemas.model_gateway.batch_response import BatchModelResponse
@@ -88,6 +89,7 @@ async def test_engine_handles_batch_inference_failure_and_continues(
         model_id=model_id,
         dataset_version_id=dataset_version_id,
         evaluation_type=EvaluationType.TEXT,
+        mode=EvaluationRunMode.ADVANCED,
         configuration={
             "execution_mode": "batch",
             "batch_size": 5,
@@ -310,6 +312,7 @@ async def test_engine_isolates_individual_batch_item_failure(
         model_id=model_id,
         dataset_version_id=dataset_version_id,
         evaluation_type=EvaluationType.TEXT,
+        mode=EvaluationRunMode.ADVANCED,
         configuration={
             "execution_mode": "batch",
             "batch_size": 3,

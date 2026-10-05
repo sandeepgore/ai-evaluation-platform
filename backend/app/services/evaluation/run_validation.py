@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import settings
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.services.evaluation.dataset_capability import DatasetCapabilities
 from app.services.evaluation.dataset_capability_service import (
     DatasetCapabilityService,
@@ -45,6 +46,7 @@ class EvaluationRunValidationService:
     """Validates an evaluation run before it is created or executed.
 
     Responsibilities:
+    - Validate mode-specific configuration.
     - Resolve data policy configuration.
     - Read persisted dataset capabilities.
     - Resolve configured evaluators.
@@ -61,6 +63,45 @@ class EvaluationRunValidationService:
         self.applicability_service = EvaluatorApplicabilityService(
             evaluator_registry,
         )
+
+    # ------------------------------------------------------------------
+    # Mode configuration
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def validate_mode_configuration(
+        *,
+        mode: EvaluationRunMode,
+        configuration: dict[str, Any],
+    ) -> None:
+        advanced_fields = {
+            "evaluators",
+            "execution_mode",
+            "batch_size",
+            "judge_model_id",
+        }
+
+        if mode == EvaluationRunMode.DEFAULT:
+            configured_advanced_fields = sorted(
+                advanced_fields.intersection(configuration),
+            )
+
+            if configured_advanced_fields:
+                fields = ", ".join(configured_advanced_fields)
+
+                raise EvaluationRunValidationError(
+                    f"Default evaluation mode does not allow advanced configuration: {fields}."
+                )
+
+            return
+
+        if mode == EvaluationRunMode.ADVANCED:
+            evaluators = configuration.get("evaluators")
+
+            if not evaluators:
+                raise EvaluationRunValidationError(
+                    "Advanced evaluation mode requires at least one evaluator."
+                )
 
     # ------------------------------------------------------------------
     # Data policy
@@ -210,17 +251,14 @@ class EvaluationRunValidationService:
         self,
         *,
         evaluation_type: str,
+        mode: EvaluationRunMode,
         configuration: dict[str, Any],
         capabilities: EvaluationCapabilities,
         dataset_capabilities: DatasetCapabilities,
         policy: DataPolicy,
         threshold: float,
     ) -> list[Evaluator]:
-        configured_evaluators = configuration.get(
-            "evaluators",
-        )
-
-        if configured_evaluators:
+        if mode == EvaluationRunMode.ADVANCED:
             try:
                 return self.applicability_service.validate_configuration(
                     configuration,
@@ -333,8 +371,18 @@ class EvaluationRunValidationService:
         db: AsyncSession,
         dataset_version_id: UUID,
         evaluation_type: str,
+        mode: EvaluationRunMode,
         configuration: dict[str, Any],
     ) -> None:
+        # --------------------------------------------------------------
+        # Mode configuration
+        # --------------------------------------------------------------
+
+        self.validate_mode_configuration(
+            mode=mode,
+            configuration=configuration,
+        )
+
         # --------------------------------------------------------------
         # Dataset capabilities
         # --------------------------------------------------------------
@@ -375,6 +423,7 @@ class EvaluationRunValidationService:
 
         evaluators = self.resolve_evaluators(
             evaluation_type=evaluation_type,
+            mode=mode,
             configuration=configuration,
             capabilities=capabilities,
             dataset_capabilities=dataset_capabilities,

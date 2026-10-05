@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation.evaluation_type import EvaluationType
 from app.services.evaluation.dataset_capability import DatasetCapabilities
 from app.services.evaluation_engine import engine as engine_module
@@ -235,6 +236,7 @@ def create_run(
     model_id,
     dataset_version_id,
     evaluation_type=EvaluationType.TEXT,
+    mode=EvaluationRunMode.ADVANCED,
     execution_mode="sequential",
     batch_size=10,
 ):
@@ -243,6 +245,7 @@ def create_run(
         model_id=model_id,
         dataset_version_id=dataset_version_id,
         evaluation_type=evaluation_type,
+        mode=mode,
         configuration={
             "execution_mode": execution_mode,
             "batch_size": batch_size,

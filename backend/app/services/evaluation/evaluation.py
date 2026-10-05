@@ -122,6 +122,7 @@ class EvaluationRunService:
             db=db,
             dataset_version_id=data.dataset_version_id,
             evaluation_type=data.evaluation_type.value,
+            mode=data.mode,
             configuration=data.configuration or {},
         )
 
@@ -135,6 +136,7 @@ class EvaluationRunService:
             name=data.name,
             status=EvaluationRunStatus.PENDING,
             evaluation_type=data.evaluation_type,
+            mode=data.mode,
             configuration=data.configuration,
             total_cases=dataset_version.case_count,
             completed_cases=0,

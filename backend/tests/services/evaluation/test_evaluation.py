@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.evaluation import EvaluationRunStatus
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.schemas.evaluation import EvaluationRunCreate, EvaluationRunUpdate
 from app.services.evaluation import EvaluationRunService
 from app.services.evaluation.run_validation import (
@@ -186,6 +187,7 @@ async def test_create_rejects_invalid_configuration_before_persistence():
         db=db,
         dataset_version_id=dataset_version_id,
         evaluation_type="text",
+        mode=EvaluationRunMode.DEFAULT,
         configuration=data.configuration,
     )
 
