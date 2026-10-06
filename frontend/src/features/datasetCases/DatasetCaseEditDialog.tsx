@@ -1,12 +1,14 @@
+import React, { useState } from "react";
 import {
+  Alert,
   Dialog,
   DialogContent,
   DialogTitle,
+  Stack,
 } from "@mui/material";
 import { DatasetCaseForm } from "./DatasetCaseForm";
-import type { UpdateDatasetCasePayload } from "./api";
+import type { DatasetCase, UpdateDatasetCasePayload } from "./api";
 import { useUpdateDatasetCase } from "./hooks";
-import type { DatasetCase } from "./api";
 
 interface DatasetCaseEditDialogProps {
   open: boolean;
@@ -20,20 +22,34 @@ export function DatasetCaseEditDialog({
   onClose,
 }: DatasetCaseEditDialogProps) {
   const updateMutation = useUpdateDatasetCase();
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClose = () => {
+    if (updateMutation.isPending) return;
+    setError(null);
+    onClose();
+  };
 
   const handleSubmit = async (
     values: Parameters<
       React.ComponentProps<typeof DatasetCaseForm>["onSubmit"]
     >[0],
   ) => {
-    if (!datasetCase) {
-      return;
-    }
+    if (!datasetCase) return;
+
+    setError(null);
 
     let caseMetadata: Record<string, unknown> | null = null;
 
-    if (values.case_metadata.trim()) {
-      caseMetadata = JSON.parse(values.case_metadata);
+    if (values.case_metadata && values.case_metadata.trim()) {
+      try {
+        caseMetadata = JSON.parse(values.case_metadata);
+      } catch {
+        setError(
+          "Invalid JSON format in Case Metadata. Please check your syntax.",
+        );
+        return;
+      }
     }
 
     const payload: UpdateDatasetCasePayload = {
@@ -42,32 +58,61 @@ export function DatasetCaseEditDialog({
       case_metadata: caseMetadata,
     };
 
-    await updateMutation.mutateAsync({
-      caseId: datasetCase.id,
-      payload,
-    });
-
-    onClose();
+    try {
+      await updateMutation.mutateAsync({
+        caseId: datasetCase.id,
+        payload,
+      });
+      handleClose();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update dataset case. Please try again.",
+      );
+    }
   };
 
   return (
     <Dialog
       open={open}
-      onClose={updateMutation.isPending ? undefined : onClose}
+      onClose={handleClose}
       fullWidth
       maxWidth="sm"
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 3,
+            p: 1,
+          },
+        },
+      }}
     >
-      <DialogTitle>Edit Dataset Case</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+        Edit Dataset Case
+      </DialogTitle>
 
-      <DialogContent>
-        {datasetCase && (
-          <DatasetCaseForm
-            datasetCase={datasetCase}
-            submitting={updateMutation.isPending}
-            onSubmit={handleSubmit}
-            onCancel={onClose}
-          />
-        )}
+      <DialogContent sx={{ pt: "8px !important" }}>
+        <Stack spacing={2}>
+          {error && (
+            <Alert
+              severity="error"
+              sx={{ borderRadius: 2 }}
+              onClose={() => setError(null)}
+            >
+              {error}
+            </Alert>
+          )}
+
+          {datasetCase && (
+            <DatasetCaseForm
+              datasetCase={datasetCase}
+              submitting={updateMutation.isPending}
+              onSubmit={handleSubmit}
+              onCancel={handleClose}
+            />
+          )}
+        </Stack>
       </DialogContent>
     </Dialog>
   );

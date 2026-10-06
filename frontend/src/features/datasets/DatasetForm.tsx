@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, MenuItem, Stack, TextField } from "@mui/material";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import type { Dataset, DatasetType } from "./api";
 
@@ -13,7 +13,11 @@ const datasetFormSchema = z.object({
   slug: z
     .string()
     .min(1, "Slug is required")
-    .max(100, "Slug must be 100 characters or fewer"),
+    .max(100, "Slug must be 100 characters or fewer")
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      "Slug must contain only lowercase letters, numbers, and hyphens",
+    ),
   description: z.string(),
   dataset_type: z.enum([
     "generation",
@@ -44,6 +48,15 @@ const datasetTypes: Array<{
   { value: "custom", label: "Custom" },
 ];
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function DatasetForm({
   dataset,
   submitting = false,
@@ -54,9 +67,12 @@ export function DatasetForm({
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
-    formState: { errors },
+    setValue,
+    watch,
+    formState: { errors, dirtyFields },
   } = useForm<DatasetFormValues>({
     resolver: zodResolver(datasetFormSchema),
     defaultValues: {
@@ -66,6 +82,15 @@ export function DatasetForm({
       dataset_type: dataset?.dataset_type ?? "custom",
     },
   });
+
+  const nameValue = watch("name");
+
+  // Auto-generate slug when creating a new dataset if slug hasn't been manually modified
+  useEffect(() => {
+    if (!isEdit && !dirtyFields.slug && nameValue) {
+      setValue("slug", slugify(nameValue), { shouldValidate: true });
+    }
+  }, [nameValue, isEdit, dirtyFields.slug, setValue]);
 
   useEffect(() => {
     reset({
@@ -96,22 +121,27 @@ export function DatasetForm({
         disabled={submitting}
       />
 
-      <TextField
-        select
-        label="Dataset Type"
-        fullWidth
-        defaultValue={dataset?.dataset_type ?? "custom"}
-        {...register("dataset_type")}
-        error={Boolean(errors.dataset_type)}
-        helperText={errors.dataset_type?.message}
-        disabled={submitting}
-      >
-        {datasetTypes.map((type) => (
-          <MenuItem key={type.value} value={type.value}>
-            {type.label}
-          </MenuItem>
-        ))}
-      </TextField>
+      <Controller
+        name="dataset_type"
+        control={control}
+        render={({ field }) => (
+          <TextField
+            {...field}
+            select
+            label="Dataset Type"
+            fullWidth
+            error={Boolean(errors.dataset_type)}
+            helperText={errors.dataset_type?.message}
+            disabled={submitting}
+          >
+            {datasetTypes.map((type) => (
+              <MenuItem key={type.value} value={type.value}>
+                {type.label}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+      />
 
       <TextField
         label="Description"
@@ -124,12 +154,27 @@ export function DatasetForm({
         disabled={submitting}
       />
 
-      <Stack direction="row" spacing={1.5} sx={{ justifyContent: "flex-end" }}>
-        <Button type="button" onClick={onCancel} disabled={submitting}>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        sx={{ justifyContent: "flex-end", pt: 1 }}
+      >
+        <Button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          sx={{ textTransform: "none", fontWeight: 600 }}
+        >
           Cancel
         </Button>
 
-        <Button type="submit" variant="contained" disabled={submitting}>
+        <Button
+          type="submit"
+          variant="contained"
+          disableElevation
+          disabled={submitting}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+        >
           {submitting
             ? "Saving..."
             : isEdit

@@ -52,7 +52,6 @@ class DatasetVersionService:
                     + 1
                 ).where(
                     DatasetVersion.dataset_id == data.dataset_id,
-                    DatasetVersion.is_active.is_(True),
                 )
             )
 

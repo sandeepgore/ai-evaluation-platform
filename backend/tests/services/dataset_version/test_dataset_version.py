@@ -97,7 +97,7 @@ async def test_create_dataset_version_generates_next_version():
 
 
 @pytest.mark.asyncio
-async def test_create_dataset_version_ignores_inactive_versions():
+async def test_create_dataset_version_considers_inactive_versions():
     dataset_id = uuid4()
 
     dataset = MagicMock()
@@ -107,8 +107,9 @@ async def test_create_dataset_version_ignores_inactive_versions():
     dataset_result = MagicMock()
     dataset_result.scalar_one_or_none.return_value = dataset
 
+    # The highest existing version is inactive.
     version_result = MagicMock()
-    version_result.scalar_one.return_value = 3
+    version_result.scalar_one.return_value = 4
 
     db = AsyncMock()
     db.add = MagicMock()
@@ -126,9 +127,13 @@ async def test_create_dataset_version_ignores_inactive_versions():
 
     version = await service.create(data)
 
-    assert version.version == 3
+    assert version.version == 4
     assert version.status == DatasetVersionStatus.DRAFT
     assert version.is_active is True
+
+    db.add.assert_called_once_with(version)
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(version)
 
 
 @pytest.mark.asyncio

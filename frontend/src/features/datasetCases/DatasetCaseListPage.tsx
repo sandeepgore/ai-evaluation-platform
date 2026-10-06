@@ -1,5 +1,14 @@
-import { AddOutlined } from "@mui/icons-material";
-import { Button, Stack, Typography } from "@mui/material";
+import { AddOutlined, SearchOutlined } from "@mui/icons-material";
+import {
+  Box,
+  Button,
+  Chip,
+  InputAdornment,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
@@ -53,6 +62,7 @@ export function DatasetCaseListPage() {
   const [editCase, setEditCase] = useState<DatasetCase | null>(null);
   const [deleteCase, setDeleteCase] = useState<DatasetCase | null>(null);
 
+  const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
@@ -61,8 +71,18 @@ export function DatasetCaseListPage() {
 
   const allCases = useMemo(() => cases ?? [], [cases]);
 
+  const filteredCases = useMemo(() => {
+    if (!searchQuery.trim()) return allCases;
+    const query = searchQuery.toLowerCase().trim();
+    return allCases.filter(
+      (c) =>
+        c.input.toLowerCase().includes(query) ||
+        (c.expected_output && c.expected_output.toLowerCase().includes(query)),
+    );
+  }, [allCases, searchQuery]);
+
   const sortedCases = useMemo(() => {
-    return [...allCases].sort((a, b) => {
+    return [...filteredCases].sort((a, b) => {
       let comparison = 0;
 
       switch (sortField) {
@@ -91,7 +111,7 @@ export function DatasetCaseListPage() {
 
       return sortDirection === "asc" ? comparison : -comparison;
     });
-  }, [allCases, sortField, sortDirection]);
+  }, [filteredCases, sortField, sortDirection]);
 
   if (!datasetId || !versionId) {
     return <ErrorState message="Dataset version information is missing." />;
@@ -109,9 +129,7 @@ export function DatasetCaseListPage() {
   const ready = version.status === "ready";
 
   const totalCases = sortedCases.length;
-
   const totalPages = Math.max(1, Math.ceil(totalCases / pageSize));
-
   const currentPage = Math.min(page, totalPages - 1);
 
   const visibleCases = sortedCases.slice(
@@ -135,6 +153,17 @@ export function DatasetCaseListPage() {
     setPage(0);
   };
 
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+    setPage(0);
+  };
+
+  const statusColorMap = {
+    draft: "warning",
+    ready: "success",
+    archived: "default",
+  } as const;
+
   return (
     <Stack spacing={3}>
       <AppBreadcrumbs
@@ -156,6 +185,7 @@ export function DatasetCaseListPage() {
         ]}
       />
 
+      {/* Header Section */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
@@ -165,39 +195,126 @@ export function DatasetCaseListPage() {
         }}
       >
         <Stack spacing={0.5}>
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
-            Cases
-          </Typography>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+              Evaluation Cases
+            </Typography>
+            <Chip
+              label={version.status.toUpperCase()}
+              size="small"
+              color={statusColorMap[version.status] ?? "default"}
+              sx={{ fontWeight: 700, borderRadius: 1.5, fontSize: "0.7rem" }}
+            />
+          </Stack>
 
           <Typography variant="body2" color="text.secondary">
-            Manage evaluation cases for Dataset Version v{version.version}.
+            Manage test cases and ground-truth expectations for Version v
+            {version.version}.
           </Typography>
         </Stack>
 
         {editable && (
           <Button
             variant="contained"
+            disableElevation
             startIcon={<AddOutlined />}
             onClick={() => setCreateOpen(true)}
+            sx={{
+              borderRadius: 2,
+              textTransform: "none",
+              fontWeight: 600,
+              px: 2.5,
+            }}
           >
             Add Case
           </Button>
         )}
       </Stack>
 
+      {/* Main Content Area */}
       {allCases.length === 0 ? (
-        <Stack>
+        <Paper
+          variant="outlined"
+          sx={{ borderRadius: 3, p: 4, textAlign: "center" }}
+        >
           <EmptyState
-            title="No cases yet"
+            title="No cases in this version"
             description={
               editable
-                ? "Add the first case to this draft dataset version."
+                ? "Get started by adding the first evaluation case to this draft version."
                 : "This dataset version does not contain any cases."
             }
           />
-        </Stack>
+          {editable && (
+            <Button
+              variant="outlined"
+              startIcon={<AddOutlined />}
+              onClick={() => setCreateOpen(true)}
+              sx={{
+                mt: 2,
+                borderRadius: 2,
+                textTransform: "none",
+                fontWeight: 600,
+              }}
+            >
+              Create First Case
+            </Button>
+          )}
+        </Paper>
       ) : (
-        <Stack spacing={0}>
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            overflow: "hidden",
+            borderColor: "divider",
+          }}
+        >
+          {/* Table Toolbar & Search Filter */}
+          <Box
+            sx={{
+              p: 2,
+              borderBottom: 1,
+              borderColor: "divider",
+              bgcolor: "background.neutral",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 2,
+              flexWrap: "wrap",
+            }}
+          >
+            <TextField
+              size="small"
+              placeholder="Search inputs or outputs..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchOutlined fontSize="small" color="action" />
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: "background.paper",
+                    width: { xs: "100%", sm: 300 },
+                  },
+                },
+              }}
+            />
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 600 }}
+            >
+              Showing {totalCases} {totalCases === 1 ? "case" : "cases"}
+            </Typography>
+          </Box>
+
+          {/* Dataset Table */}
           <DatasetCaseTable
             cases={visibleCases}
             editable={editable}
@@ -210,6 +327,7 @@ export function DatasetCaseListPage() {
             onDelete={setDeleteCase}
           />
 
+          {/* Pagination Controls */}
           <DataTablePagination
             page={currentPage}
             pageSize={pageSize}
@@ -217,9 +335,10 @@ export function DatasetCaseListPage() {
             onPageChange={setPage}
             onPageSizeChange={handlePageSizeChange}
           />
-        </Stack>
+        </Paper>
       )}
 
+      {/* Dialog Modals */}
       <DatasetCaseCreateDialog
         open={createOpen}
         datasetVersionId={versionId}

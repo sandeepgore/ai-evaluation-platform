@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import { ConfirmDialog } from "../../components/common/ConfirmDialog";
 import type { DatasetVersion } from "./api";
 import { useFinalizeDatasetVersion } from "./hooks";
@@ -14,31 +15,53 @@ export function DatasetVersionFinalizeDialog({
   onClose,
 }: DatasetVersionFinalizeDialogProps) {
   const finalizeMutation = useFinalizeDatasetVersion();
+  const [error, setError] = useState<string | null>(null);
 
-  const handleConfirm = async () => {
-    if (!version) {
-      return;
-    }
-
-    await finalizeMutation.mutateAsync(version.id);
+  const handleClose = () => {
+    if (finalizeMutation.isPending) return;
+    setError(null);
     onClose();
   };
+
+  const handleConfirm = async () => {
+    if (!version || version.case_count === 0) return;
+
+    setError(null);
+    try {
+      await finalizeMutation.mutateAsync(version.id);
+      handleClose();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to finalize dataset version. Please try again.",
+      );
+    }
+  };
+
+  const hasNoCases = (version?.case_count ?? 0) === 0;
 
   return (
     <ConfirmDialog
       open={open}
-      title="Finalize Dataset Version"
+      title={`Finalize Dataset Version ${version ? `v${version.version}` : ""}`}
       message={
-        version
-          ? `Are you sure you want to finalize version ${version.version}? Once finalized, it will be marked as ready.`
-          : ""
+        hasNoCases
+          ? `Version v${version?.version} has 0 cases. You must add at least one test case before finalizing.`
+          : version
+            ? `Finalizing transitions version v${version.version} from Draft to Ready state. Once finalized, it will be locked against further case edits.`
+            : ""
       }
-      confirmLabel="Finalize"
+      confirmLabel={
+        hasNoCases ? "Cannot Finalize (0 Cases)" : "Finalize Version"
+      }
       loading={finalizeMutation.isPending}
       onConfirm={() => {
-        void handleConfirm();
+        if (!hasNoCases) {
+          void handleConfirm();
+        }
       }}
-      onCancel={onClose}
+      onCancel={handleClose}
     />
   );
 }

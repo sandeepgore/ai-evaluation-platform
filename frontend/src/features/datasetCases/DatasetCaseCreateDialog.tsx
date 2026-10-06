@@ -1,7 +1,10 @@
+import React, { useState } from "react";
 import {
+  Alert,
   Dialog,
   DialogContent,
   DialogTitle,
+  Stack,
 } from "@mui/material";
 import { DatasetCaseForm } from "./DatasetCaseForm";
 import type { CreateDatasetCasePayload } from "./api";
@@ -19,16 +22,32 @@ export function DatasetCaseCreateDialog({
   onClose,
 }: DatasetCaseCreateDialogProps) {
   const createMutation = useCreateDatasetCase();
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClose = () => {
+    if (createMutation.isPending) return;
+    setError(null);
+    onClose();
+  };
 
   const handleSubmit = async (
     values: Parameters<
       React.ComponentProps<typeof DatasetCaseForm>["onSubmit"]
     >[0],
   ) => {
+    setError(null);
+
     let caseMetadata: Record<string, unknown> | null = null;
 
-    if (values.case_metadata.trim()) {
-      caseMetadata = JSON.parse(values.case_metadata);
+    if (values.case_metadata && values.case_metadata.trim()) {
+      try {
+        caseMetadata = JSON.parse(values.case_metadata);
+      } catch {
+        setError(
+          "Invalid JSON format in Case Metadata. Please check your syntax.",
+        );
+        return;
+      }
     }
 
     const payload: CreateDatasetCasePayload = {
@@ -38,25 +57,55 @@ export function DatasetCaseCreateDialog({
       case_metadata: caseMetadata,
     };
 
-    await createMutation.mutateAsync(payload);
-    onClose();
+    try {
+      await createMutation.mutateAsync(payload);
+      handleClose();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to add dataset case. Please try again.",
+      );
+    }
   };
 
   return (
     <Dialog
       open={open}
-      onClose={createMutation.isPending ? undefined : onClose}
+      onClose={handleClose}
       fullWidth
       maxWidth="sm"
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 3,
+            p: 1,
+          },
+        },
+      }}
     >
-      <DialogTitle>Add Dataset Case</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+        Add Dataset Case
+      </DialogTitle>
 
-      <DialogContent>
-        <DatasetCaseForm
-          submitting={createMutation.isPending}
-          onSubmit={handleSubmit}
-          onCancel={onClose}
-        />
+      <DialogContent sx={{ pt: "8px !important" }}>
+        <Stack spacing={2}>
+          {error && (
+            <Alert
+              severity="error"
+              sx={{ borderRadius: 2 }}
+              onClose={() => setError(null)}
+            >
+              {error}
+            </Alert>
+          )}
+
+          <DatasetCaseForm
+            submitting={createMutation.isPending}
+            onSubmit={handleSubmit}
+            onCancel={handleClose}
+          />
+        </Stack>
       </DialogContent>
     </Dialog>
   );

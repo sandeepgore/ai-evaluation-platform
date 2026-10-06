@@ -1,5 +1,10 @@
 import {
-  Box,
+  DeleteOutlined,
+  EditOutlined,
+  LayersOutlined,
+} from "@mui/icons-material";
+import {
+  Chip,
   IconButton,
   Paper,
   Stack,
@@ -29,17 +34,23 @@ export function DatasetTable({
   onViewVersions,
 }: DatasetTableProps) {
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table>
+    <TableContainer
+      component={Paper}
+      variant="outlined"
+      sx={{ borderRadius: 0, border: 0 }}
+    >
+      <Table sx={{ minWidth: 650 }}>
         <TableHead>
-          <TableRow>
-            <TableCell>Dataset</TableCell>
-            <TableCell>Slug</TableCell>
-            <TableCell>Type</TableCell>
-            <TableCell>Description</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Workflow</TableCell>
-            <TableCell align="right">Actions</TableCell>
+          <TableRow sx={{ bgcolor: "action.hover" }}>
+            <TableCell sx={{ minWidth: 160 }}>Dataset</TableCell>
+            <TableCell sx={{ minWidth: 140 }}>Slug</TableCell>
+            <TableCell sx={{ width: 120 }}>Type</TableCell>
+            <TableCell sx={{ minWidth: 200 }}>Description</TableCell>
+            <TableCell sx={{ width: 110 }}>Status</TableCell>
+            <TableCell sx={{ width: 100 }}>Versions</TableCell>
+            <TableCell align="right" sx={{ width: 110 }}>
+              Actions
+            </TableCell>
           </TableRow>
         </TableHead>
 
@@ -52,6 +63,7 @@ export function DatasetTable({
                 "&:last-child td, &:last-child th": {
                   border: 0,
                 },
+                transition: "background-color 0.2s ease",
               }}
             >
               <TableCell>
@@ -61,21 +73,43 @@ export function DatasetTable({
               </TableCell>
 
               <TableCell>
-                <Typography variant="body2" color="text.secondary">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.8125rem",
+                  }}
+                >
                   {dataset.slug}
                 </Typography>
               </TableCell>
 
               <TableCell>
-                <Typography variant="body2">{dataset.dataset_type}</Typography>
+                <Chip
+                  label={dataset.dataset_type}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 1.5,
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    textTransform: "capitalize",
+                  }}
+                />
               </TableCell>
 
               <TableCell>
                 <Typography
                   variant="body2"
-                  color={
-                    dataset.description ? "text.primary" : "text.secondary"
-                  }
+                  color={dataset.description ? "text.primary" : "text.disabled"}
+                  sx={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    fontStyle: dataset.description ? "normal" : "italic",
+                  }}
                 >
                   {dataset.description ?? "No description"}
                 </Typography>
@@ -91,44 +125,27 @@ export function DatasetTable({
                     aria-label={`View versions for ${dataset.name}`}
                     onClick={() => onViewVersions(dataset)}
                     size="small"
+                    color="primary"
                   >
-                    <Box
-                      component="img"
-                      src="/svg/versions.svg"
-                      alt=""
-                      sx={{
-                        width: 24,
-                        height: 24,
-                      }}
-                    />
+                    <LayersOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </TableCell>
 
               <TableCell align="right">
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    gap: 0.5,
-                  }}
+                <Stack
+                  direction="row"
+                  spacing={0.5}
+                  sx={{ justifyContent: "flex-end", alignItems: "center" }}
                 >
                   <Tooltip title="Edit dataset">
                     <IconButton
                       aria-label={`Edit ${dataset.name}`}
                       onClick={() => onEdit(dataset)}
                       size="small"
+                      color="info"
                     >
-                      <Box
-                        component="img"
-                        src="/svg/edit.svg"
-                        alt=""
-                        sx={{
-                          width: 24,
-                          height: 24,
-                        }}
-                      />
+                      <EditOutlined fontSize="small" />
                     </IconButton>
                   </Tooltip>
 
@@ -137,19 +154,12 @@ export function DatasetTable({
                       aria-label={`Delete ${dataset.name}`}
                       onClick={() => onDelete(dataset)}
                       size="small"
+                      color="error"
                     >
-                      <Box
-                        component="img"
-                        src="/svg/delete.svg"
-                        alt=""
-                        sx={{
-                          width: 24,
-                          height: 24,
-                        }}
-                      />
+                      <DeleteOutlined fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                </Box>
+                </Stack>
               </TableCell>
             </TableRow>
           ))}

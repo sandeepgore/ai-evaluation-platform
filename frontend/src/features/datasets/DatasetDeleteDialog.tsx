@@ -15,13 +15,21 @@ export function DatasetDeleteDialog({
 }: DatasetDeleteDialogProps) {
   const deleteMutation = useDeleteDataset();
 
-  const handleConfirm = async () => {
-    if (!dataset) {
-      return;
-    }
-
-    await deleteMutation.mutateAsync(dataset.id);
+  const handleClose = () => {
+    if (deleteMutation.isPending) return;
+    deleteMutation.reset();
     onClose();
+  };
+
+  const handleConfirm = async () => {
+    if (!dataset) return;
+
+    try {
+      await deleteMutation.mutateAsync(dataset.id);
+      handleClose();
+    } catch {
+      // Error state is handled at hook level or caught by React Query
+    }
   };
 
   return (
@@ -30,15 +38,15 @@ export function DatasetDeleteDialog({
       title="Delete Dataset"
       message={
         dataset
-          ? `Are you sure you want to delete "${dataset.name}"? This action cannot be undone.`
-          : ""
+          ? `Are you sure you want to delete "${dataset.name}"? This will permanently remove the dataset and all associated versions and test cases. This action cannot be undone.`
+          : "Are you sure you want to delete this dataset?"
       }
-      confirmLabel="Delete"
+      confirmLabel="Delete Dataset"
       loading={deleteMutation.isPending}
       onConfirm={() => {
         void handleConfirm();
       }}
-      onCancel={onClose}
+      onCancel={handleClose}
     />
   );
 }
