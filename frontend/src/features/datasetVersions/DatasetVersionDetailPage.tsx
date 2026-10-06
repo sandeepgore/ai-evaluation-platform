@@ -1,9 +1,14 @@
+import React from "react";
 import {
   CheckCircleOutlined,
   DataObjectOutlined,
   DatasetOutlined,
   HelpOutlined,
   ListAltOutlined,
+  ArrowBackOutlined,
+  InfoOutlined,
+  CheckCircle,
+  WarningAmber,
 } from "@mui/icons-material";
 import {
   Alert,
@@ -11,12 +16,16 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Divider,
   Grid,
   LinearProgress,
+  Paper,
   Stack,
   Tooltip,
   Typography,
+  alpha,
+  useTheme,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
@@ -28,6 +37,7 @@ import { useDatasetVersion } from "./hooks";
 
 export function DatasetVersionDetailPage() {
   const navigate = useNavigate();
+  const theme = useTheme();
 
   const { datasetId, versionId } = useParams<{
     datasetId: string;
@@ -42,135 +52,232 @@ export function DatasetVersionDetailPage() {
   }
 
   if (isLoading) {
-    return <LoadingState message="Loading dataset version..." />;
+    return <LoadingState message="Loading dataset version details..." />;
   }
 
   if (isError || !data) {
-    return <ErrorState message="Unable to load dataset version." />;
+    return <ErrorState message="Unable to load dataset version details." />;
   }
 
   const analytics = data.analytics;
-  const totalCases = data.case_count;
+  const totalCases = data.case_count ?? 0;
   const isFinalized = data.status !== "draft";
 
   const referenceCount = analytics?.reference_count ?? 0;
   const contextCount = analytics?.context_count ?? 0;
 
-  const referenceCoverage = analytics?.reference_coverage ?? 0;
-  const contextCoverage = analytics?.context_coverage ?? 0;
+  // Safe fallback coverage calculations
+  const referenceCoverage =
+    analytics?.reference_coverage ??
+    (totalCases > 0 ? referenceCount / totalCases : 0);
+  const contextCoverage =
+    analytics?.context_coverage ??
+    (totalCases > 0 ? contextCount / totalCases : 0);
 
   const hasEvaluationData = totalCases > 0;
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3.5} sx={{ pb: 4 }}>
+      {/* Breadcrumb Navigation */}
       <AppBreadcrumbs
         items={[
-          {
-            label: "Datasets",
-            to: "/datasets",
-          },
-          {
-            label: dataset?.name ?? "Dataset",
-          },
-          {
-            label: "Versions",
-            to: `/datasets/${datasetId}/versions`,
-          },
-          {
-            label: `Version v${data.version}`,
-          },
+          { label: "Datasets", to: "/datasets" },
+          { label: dataset?.name ?? "Dataset" },
+          { label: "Versions", to: `/datasets/${datasetId}/versions` },
+          { label: `Version v${data.version}` },
         ]}
       />
 
-      {/* Header */}
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
+      {/* Hero Header */}
+      <Paper
+        elevation={0}
         sx={{
-          justifyContent: "space-between",
-          alignItems: { xs: "flex-start", sm: "center" },
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 3,
+          border: "1px solid",
+          borderColor: "divider",
+          background: (theme) =>
+            theme.palette.mode === "dark"
+              ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)} 0%, ${alpha(
+                  theme.palette.background.paper,
+                  0.4,
+                )} 100%)`
+              : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.03)} 0%, #FFFFFF 100%)`,
         }}
       >
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: "flex-start" }}>
-          <Box
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={2.5}
+          sx={{
+            justifyContent: "space-between",
+            alignItems: { xs: "flex-start", md: "center" },
+          }}
+        >
+          <Stack direction="row" spacing={2.5} sx={{ alignItems: "center" }}>
+            <Box
+              sx={{
+                width: 56,
+                height: 56,
+                borderRadius: 2.5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: alpha(theme.palette.primary.main, 0.1),
+                color: "primary.main",
+                boxShadow: `0 0 0 1px ${alpha(theme.palette.primary.main, 0.2)}`,
+                flexShrink: 0,
+              }}
+            >
+              <DatasetOutlined sx={{ fontSize: 28 }} />
+            </Box>
+
+            <Stack spacing={0.75}>
+              <Stack
+                direction="row"
+                spacing={1.5}
+                sx={{ alignItems: "center" }}
+              >
+                <Typography
+                  variant="h5"
+                  sx={{ fontWeight: 700, letterSpacing: "-0.01em" }}
+                >
+                  Version {data.version}
+                </Typography>
+                <DatasetVersionStatusChip status={data.status} />
+              </Stack>
+
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ maxWidth: 640 }}
+              >
+                {data.description ||
+                  "No specific version release notes or description provided."}
+              </Typography>
+            </Stack>
+          </Stack>
+
+          <Stack
+            direction="row"
+            spacing={1.5}
             sx={{
-              mt: 0.25,
-              width: 40,
-              height: 40,
-              borderRadius: 2,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "rgba(79, 70, 229, 0.08)",
-              color: "primary.main",
-              flexShrink: 0,
+              width: { xs: "100%", md: "auto" },
+              justifyContent: { xs: "flex-start", md: "flex-end" },
             }}
           >
-            <DatasetOutlined />
-          </Box>
-
-          <Stack spacing={0.5}>
-            <Typography variant="h5">
-              Dataset Version v{data.version}
-            </Typography>
-
-            <Typography variant="body2" color="text.secondary">
-              {data.description ?? "No description"}
-            </Typography>
+            <Button
+              variant="outlined"
+              color="inherit"
+              startIcon={<ArrowBackOutlined fontSize="small" />}
+              onClick={() => navigate(`/datasets/${datasetId}/versions`)}
+              sx={{
+                borderRadius: 2,
+                textTransform: "none",
+                fontWeight: 600,
+                borderColor: "divider",
+              }}
+            >
+              Back
+            </Button>
+            <Button
+              variant="contained"
+              disableElevation
+              startIcon={<ListAltOutlined fontSize="small" />}
+              onClick={() =>
+                navigate(`/datasets/${datasetId}/versions/${versionId}/cases`)
+              }
+              sx={{
+                borderRadius: 2,
+                textTransform: "none",
+                fontWeight: 600,
+                px: 2.5,
+              }}
+            >
+              View Cases
+            </Button>
           </Stack>
         </Stack>
+      </Paper>
 
-        <DatasetVersionStatusChip status={data.status} />
-      </Stack>
-
-      {/* Overview */}
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
-          <Typography variant="h6">Overview</Typography>
-
-          <Tooltip title="A summary of the evaluation data contained in this dataset version.">
+      {/* Analytics Summary */}
+      <Stack spacing={2}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1.1rem" }}>
+            Overview Metrics
+          </Typography>
+          <Tooltip title="Core counts and data point availability across all scenarios in this version.">
             <HelpOutlined
-              sx={{
-                fontSize: 17,
-                color: "text.disabled",
-                cursor: "help",
-              }}
+              sx={{ fontSize: 16, color: "text.disabled", cursor: "help" }}
             />
           </Tooltip>
         </Stack>
 
         {!isFinalized && (
-          <Alert severity="info">
+          <Alert
+            severity="info"
+            icon={<InfoOutlined fontSize="small" />}
+            sx={{
+              borderRadius: 2,
+              border: "1px solid",
+              borderColor: alpha(theme.palette.info.main, 0.2),
+            }}
+          >
             <Typography variant="body2">
-              <strong>Analytics are not available yet.</strong> This dataset
-              version is still in Draft status. Finalize the version to generate
-              and view reference and context analytics.
+              <strong>Draft Version:</strong> Complete context and reference
+              analytics will automatically calculate once this version is
+              finalized.
             </Typography>
           </Alert>
         )}
 
-        <Grid container spacing={2}>
+        <Grid container spacing={2.5}>
+          {/* Total Cases Card */}
           <Grid size={{ xs: 12, md: isFinalized ? 4 : 12 }}>
-            <Card sx={{ height: "100%" }}>
-              <CardContent>
-                <Stack spacing={1}>
+            <Card
+              variant="outlined"
+              sx={{
+                height: "100%",
+                borderRadius: 2.5,
+                transition: "border-color 0.2s",
+                "&:hover": { borderColor: "text.secondary" },
+              }}
+            >
+              <CardContent sx={{ p: 2.5 }}>
+                <Stack spacing={1.5}>
                   <Stack
                     direction="row"
-                    spacing={0.5}
-                    sx={{ alignItems: "center" }}
+                    sx={{
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
                   >
-                    <ListAltOutlined
-                      sx={{ color: "text.secondary", fontSize: 21 }}
-                    />
-
-                    <Typography variant="body2" color="text.secondary">
-                      Total Cases
-                    </Typography>
-
-                    <Tooltip title="The total number of evaluation scenarios contained in this dataset version.">
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{ alignItems: "center" }}
+                    >
+                      <Box
+                        sx={{
+                          p: 0.75,
+                          borderRadius: 1.5,
+                          bgcolor: alpha(theme.palette.primary.main, 0.1),
+                          color: "primary.main",
+                          display: "flex",
+                        }}
+                      >
+                        <ListAltOutlined fontSize="small" />
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ fontWeight: 600 }}
+                      >
+                        Total Scenarios
+                      </Typography>
+                    </Stack>
+                    <Tooltip title="Total number of evaluation cases inside this version.">
                       <HelpOutlined
                         sx={{
-                          ml: "auto",
                           fontSize: 16,
                           color: "text.disabled",
                           cursor: "help",
@@ -179,10 +286,12 @@ export function DatasetVersionDetailPage() {
                     </Tooltip>
                   </Stack>
 
-                  <Typography variant="h4">{totalCases}</Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 800 }}>
+                    {totalCases.toLocaleString()}
+                  </Typography>
 
-                  <Typography variant="body2" color="text.secondary">
-                    Evaluation scenarios
+                  <Typography variant="caption" color="text.secondary">
+                    Total evaluation test cases registered
                   </Typography>
                 </Stack>
               </CardContent>
@@ -191,27 +300,53 @@ export function DatasetVersionDetailPage() {
 
           {isFinalized && (
             <>
+              {/* Reference Data Card */}
               <Grid size={{ xs: 12, md: 4 }}>
-                <Card sx={{ height: "100%" }}>
-                  <CardContent>
-                    <Stack spacing={1}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: "100%",
+                    borderRadius: 2.5,
+                    transition: "border-color 0.2s",
+                    "&:hover": { borderColor: "text.secondary" },
+                  }}
+                >
+                  <CardContent sx={{ p: 2.5 }}>
+                    <Stack spacing={1.5}>
                       <Stack
                         direction="row"
-                        spacing={0.5}
-                        sx={{ alignItems: "center" }}
+                        sx={{
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
                       >
-                        <CheckCircleOutlined
-                          sx={{ color: "text.secondary", fontSize: 21 }}
-                        />
-
-                        <Typography variant="body2" color="text.secondary">
-                          Reference Data
-                        </Typography>
-
-                        <Tooltip title="Cases that contain an expected output or reference answer that can be used by evaluators.">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          sx={{ alignItems: "center" }}
+                        >
+                          <Box
+                            sx={{
+                              p: 0.75,
+                              borderRadius: 1.5,
+                              bgcolor: alpha(theme.palette.success.main, 0.1),
+                              color: "success.main",
+                              display: "flex",
+                            }}
+                          >
+                            <CheckCircleOutlined fontSize="small" />
+                          </Box>
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ fontWeight: 600 }}
+                          >
+                            Reference Targets
+                          </Typography>
+                        </Stack>
+                        <Tooltip title="Cases containing reference output ground truths.">
                           <HelpOutlined
                             sx={{
-                              ml: "auto",
                               fontSize: 16,
                               color: "text.disabled",
                               cursor: "help",
@@ -220,37 +355,65 @@ export function DatasetVersionDetailPage() {
                         </Tooltip>
                       </Stack>
 
-                      <Typography variant="h4">{referenceCount}</Typography>
+                      <Typography variant="h3" sx={{ fontWeight: 800 }}>
+                        {referenceCount.toLocaleString()}
+                      </Typography>
 
-                      <Typography variant="body2" color="text.secondary">
-                        of {totalCases} cases
+                      <Typography variant="caption" color="text.secondary">
+                        Out of {totalCases.toLocaleString()} total test cases
                       </Typography>
                     </Stack>
                   </CardContent>
                 </Card>
               </Grid>
 
+              {/* Context Data Card */}
               <Grid size={{ xs: 12, md: 4 }}>
-                <Card sx={{ height: "100%" }}>
-                  <CardContent>
-                    <Stack spacing={1}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: "100%",
+                    borderRadius: 2.5,
+                    transition: "border-color 0.2s",
+                    "&:hover": { borderColor: "text.secondary" },
+                  }}
+                >
+                  <CardContent sx={{ p: 2.5 }}>
+                    <Stack spacing={1.5}>
                       <Stack
                         direction="row"
-                        spacing={0.5}
-                        sx={{ alignItems: "center" }}
+                        sx={{
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
                       >
-                        <DataObjectOutlined
-                          sx={{ color: "text.secondary", fontSize: 21 }}
-                        />
-
-                        <Typography variant="body2" color="text.secondary">
-                          Context Data
-                        </Typography>
-
-                        <Tooltip title="Cases that contain contextual information that can be used when evaluating context-dependent or RAG systems.">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          sx={{ alignItems: "center" }}
+                        >
+                          <Box
+                            sx={{
+                              p: 0.75,
+                              borderRadius: 1.5,
+                              bgcolor: alpha(theme.palette.info.main, 0.1),
+                              color: "info.main",
+                              display: "flex",
+                            }}
+                          >
+                            <DataObjectOutlined fontSize="small" />
+                          </Box>
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ fontWeight: 600 }}
+                          >
+                            Context Support
+                          </Typography>
+                        </Stack>
+                        <Tooltip title="Cases with contextual retrieval text attached.">
                           <HelpOutlined
                             sx={{
-                              ml: "auto",
                               fontSize: 16,
                               color: "text.disabled",
                               cursor: "help",
@@ -259,10 +422,12 @@ export function DatasetVersionDetailPage() {
                         </Tooltip>
                       </Stack>
 
-                      <Typography variant="h4">{contextCount}</Typography>
+                      <Typography variant="h3" sx={{ fontWeight: 800 }}>
+                        {contextCount.toLocaleString()}
+                      </Typography>
 
-                      <Typography variant="body2" color="text.secondary">
-                        of {totalCases} cases
+                      <Typography variant="caption" color="text.secondary">
+                        Out of {totalCases.toLocaleString()} total test cases
                       </Typography>
                     </Stack>
                   </CardContent>
@@ -273,133 +438,176 @@ export function DatasetVersionDetailPage() {
         </Grid>
       </Stack>
 
-      {/* Evaluation Data */}
-      <Card>
-        <CardContent>
-          <Stack spacing={2.5}>
+      {/* Dataset Capabilities Section */}
+      <Card variant="outlined" sx={{ borderRadius: 3 }}>
+        <CardContent sx={{ p: { xs: 2.5, sm: 3.5 } }}>
+          <Stack spacing={3}>
             <Stack spacing={0.5}>
-              <Stack
-                direction="row"
-                spacing={0.5}
-                sx={{ alignItems: "center" }}
-              >
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                 {hasEvaluationData ? (
-                  <CheckCircleOutlined
-                    sx={{ color: "success.main", fontSize: 22 }}
-                  />
+                  <CheckCircle sx={{ color: "success.main", fontSize: 22 }} />
                 ) : (
-                  <DatasetOutlined
-                    sx={{ color: "text.secondary", fontSize: 22 }}
-                  />
+                  <WarningAmber sx={{ color: "warning.main", fontSize: 22 }} />
                 )}
 
-                <Typography variant="h6">Evaluation Data</Typography>
-
-                <Tooltip title="This section describes which types of data are available for evaluators when this dataset version is used.">
-                  <HelpOutlined
-                    sx={{
-                      fontSize: 17,
-                      color: "text.disabled",
-                      cursor: "help",
-                    }}
-                  />
-                </Tooltip>
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: 700, fontSize: "1.1rem" }}
+                >
+                  Evaluation Readiness
+                </Typography>
               </Stack>
 
               <Typography variant="body2" color="text.secondary">
                 {hasEvaluationData
-                  ? "This version contains evaluation cases that can be used when running an evaluation."
-                  : "This version does not contain any evaluation cases yet."}
+                  ? "This dataset version is fully configured for automated model evaluation runs."
+                  : "No evaluation scenarios have been added to this dataset version yet."}
               </Typography>
             </Stack>
 
             <Divider />
 
             <Grid container spacing={3}>
+              {/* Input Feature */}
               <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <Stack spacing={0.75}>
-                  <Typography variant="body2" color="text.secondary">
-                    Input
-                  </Typography>
-
-                  <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                    {hasEvaluationData ? "Available" : "No cases"}
-                  </Typography>
-
-                  <Typography variant="caption" color="text.secondary">
-                    Every evaluation case provides the input sent to the system.
-                  </Typography>
-                </Stack>
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <Stack spacing={0.75}>
+                <Stack spacing={1.25}>
                   <Stack
                     direction="row"
-                    spacing={0.5}
-                    sx={{ alignItems: "center" }}
+                    sx={{
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
                   >
-                    <Typography variant="body2" color="text.secondary">
-                      Expected Output
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, letterSpacing: 0.8 }}
+                    >
+                      PROMPT INPUT
                     </Typography>
-
-                    <Tooltip title="The expected or reference answer associated with an evaluation case.">
-                      <HelpOutlined
-                        sx={{
-                          fontSize: 15,
-                          color: "text.disabled",
-                          cursor: "help",
-                        }}
-                      />
-                    </Tooltip>
+                    <Chip
+                      label={hasEvaluationData ? "Ready" : "Empty"}
+                      size="small"
+                      color={hasEvaluationData ? "success" : "default"}
+                      variant="outlined"
+                      sx={{
+                        height: 20,
+                        fontSize: "0.6875rem",
+                        fontWeight: 700,
+                      }}
+                    />
                   </Stack>
 
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
                     {hasEvaluationData
-                      ? `${referenceCount} / ${totalCases}`
-                      : "No cases"}
+                      ? "Input Prompts Present"
+                      : "No Input Data"}
                   </Typography>
 
-                  <Typography variant="caption" color="text.secondary">
-                    Cases with a reference answer.
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.5 }}
+                  >
+                    Every case provides an input payload sent directly to
+                    evaluator models.
                   </Typography>
                 </Stack>
               </Grid>
 
+              {/* Expected Output Feature */}
               <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <Stack spacing={0.75}>
+                <Stack spacing={1.25}>
                   <Stack
                     direction="row"
-                    spacing={0.5}
-                    sx={{ alignItems: "center" }}
+                    sx={{
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
                   >
-                    <Typography variant="body2" color="text.secondary">
-                      Reference Coverage
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, letterSpacing: 0.8 }}
+                    >
+                      EXPECTED OUTPUT
                     </Typography>
-
-                    <Tooltip title="The percentage of cases that contain an expected output or reference answer.">
-                      <HelpOutlined
-                        sx={{
-                          fontSize: 15,
-                          color: "text.disabled",
-                          cursor: "help",
-                        }}
-                      />
-                    </Tooltip>
+                    <Chip
+                      label={referenceCount > 0 ? "Available" : "Optional"}
+                      size="small"
+                      color={referenceCount > 0 ? "primary" : "default"}
+                      variant="outlined"
+                      sx={{
+                        height: 20,
+                        fontSize: "0.6875rem",
+                        fontWeight: 700,
+                      }}
+                    />
                   </Stack>
 
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                    {hasEvaluationData && analytics
-                      ? `${(referenceCoverage * 100).toFixed(1)}%`
-                      : "—"}
+                    {hasEvaluationData
+                      ? `${referenceCount} / ${totalCases} cases`
+                      : "No Reference"}
                   </Typography>
 
-                  {hasEvaluationData && analytics && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.5 }}
+                  >
+                    Reference output target answers for correctness evaluation
+                    metrics.
+                  </Typography>
+                </Stack>
+              </Grid>
+
+              {/* Reference Coverage Progress */}
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Stack spacing={1.25}>
+                  <Stack
+                    direction="row"
+                    sx={{
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, letterSpacing: 0.8 }}
+                    >
+                      REFERENCE COVERAGE
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                      {hasEvaluationData
+                        ? `${(referenceCoverage * 100).toFixed(1)}%`
+                        : "—"}
+                    </Typography>
+                  </Stack>
+
+                  <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                    {hasEvaluationData
+                      ? `${(referenceCoverage * 100).toFixed(0)}% Coverage`
+                      : "Not Calculated"}
+                  </Typography>
+
+                  {hasEvaluationData ? (
                     <LinearProgress
                       variant="determinate"
-                      value={referenceCoverage * 100}
+                      value={Math.min(referenceCoverage * 100, 100)}
+                      color="success"
                       sx={{
                         height: 6,
+                        borderRadius: 3,
+                        bgcolor: alpha(theme.palette.success.main, 0.12),
+                      }}
+                    />
+                  ) : (
+                    <Box
+                      sx={{
+                        height: 6,
+                        bgcolor: "action.hover",
                         borderRadius: 3,
                       }}
                     />
@@ -407,40 +615,52 @@ export function DatasetVersionDetailPage() {
                 </Stack>
               </Grid>
 
+              {/* Context Coverage Progress */}
               <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <Stack spacing={0.75}>
+                <Stack spacing={1.25}>
                   <Stack
                     direction="row"
-                    spacing={0.5}
-                    sx={{ alignItems: "center" }}
+                    sx={{
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
                   >
-                    <Typography variant="body2" color="text.secondary">
-                      Context Coverage
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, letterSpacing: 0.8 }}
+                    >
+                      CONTEXT COVERAGE
                     </Typography>
-
-                    <Tooltip title="The percentage of cases that contain contextual information. This is especially relevant for RAG and context-dependent evaluations.">
-                      <HelpOutlined
-                        sx={{
-                          fontSize: 15,
-                          color: "text.disabled",
-                          cursor: "help",
-                        }}
-                      />
-                    </Tooltip>
+                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                      {hasEvaluationData
+                        ? `${(contextCoverage * 100).toFixed(1)}%`
+                        : "—"}
+                    </Typography>
                   </Stack>
 
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                    {hasEvaluationData && analytics
-                      ? `${(contextCoverage * 100).toFixed(1)}%`
-                      : "—"}
+                    {hasEvaluationData
+                      ? `${(contextCoverage * 100).toFixed(0)}% Coverage`
+                      : "Not Calculated"}
                   </Typography>
 
-                  {hasEvaluationData && analytics && (
+                  {hasEvaluationData ? (
                     <LinearProgress
                       variant="determinate"
-                      value={contextCoverage * 100}
+                      value={Math.min(contextCoverage * 100, 100)}
+                      color="info"
                       sx={{
                         height: 6,
+                        borderRadius: 3,
+                        bgcolor: alpha(theme.palette.info.main, 0.12),
+                      }}
+                    />
+                  ) : (
+                    <Box
+                      sx={{
+                        height: 6,
+                        bgcolor: "action.hover",
                         borderRadius: 3,
                       }}
                     />
@@ -448,59 +668,6 @@ export function DatasetVersionDetailPage() {
                 </Stack>
               </Grid>
             </Grid>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      {/* Cases */}
-      <Card>
-        <CardContent>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            sx={{
-              alignItems: { xs: "stretch", sm: "center" },
-              justifyContent: "space-between",
-            }}
-          >
-            <Stack spacing={0.75}>
-              <Stack
-                direction="row"
-                spacing={0.5}
-                sx={{ alignItems: "center" }}
-              >
-                <ListAltOutlined
-                  sx={{ color: "text.secondary", fontSize: 22 }}
-                />
-
-                <Typography variant="h6">Cases</Typography>
-
-                <Tooltip title="Individual evaluation scenarios contained in this dataset version.">
-                  <HelpOutlined
-                    sx={{
-                      fontSize: 17,
-                      color: "text.disabled",
-                      cursor: "help",
-                    }}
-                  />
-                </Tooltip>
-              </Stack>
-
-              <Typography variant="body2" color="text.secondary">
-                Inspect the individual inputs, expected outputs, context, and
-                other case data.
-              </Typography>
-            </Stack>
-
-            <Button
-              variant="outlined"
-              startIcon={<ListAltOutlined />}
-              onClick={() =>
-                navigate(`/datasets/${datasetId}/versions/${versionId}/cases`)
-              }
-            >
-              View Cases
-            </Button>
           </Stack>
         </CardContent>
       </Card>

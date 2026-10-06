@@ -1,12 +1,14 @@
-import { AddOutlined } from "@mui/icons-material";
+import { AddOutlined, SearchOutlined } from "@mui/icons-material";
 import {
+  Box,
   Button,
-  Card,
-  CardContent,
+  InputAdornment,
+  Paper,
   Stack,
+  TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
@@ -26,16 +28,26 @@ export function DatasetListPage() {
     (state) => state.selectedProjectId,
   );
 
-  const { data, isLoading, isError } = useDatasets(
-    selectedProjectId,
-  );
+  const { data, isLoading, isError } = useDatasets(selectedProjectId);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editDataset, setEditDataset] = useState<Dataset | null>(
-    null,
-  );
-  const [deleteDataset, setDeleteDataset] =
-    useState<Dataset | null>(null);
+  const [editDataset, setEditDataset] = useState<Dataset | null>(null);
+  const [deleteDataset, setDeleteDataset] = useState<Dataset | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const datasets = useMemo(() => data ?? [], [data]);
+
+  const filteredDatasets = useMemo(() => {
+    if (!searchQuery.trim()) return datasets;
+    const query = searchQuery.toLowerCase().trim();
+    return datasets.filter(
+      (d) =>
+        d.name.toLowerCase().includes(query) ||
+        d.slug.toLowerCase().includes(query) ||
+        (d.description && d.description.toLowerCase().includes(query)) ||
+        d.dataset_type.toLowerCase().includes(query),
+    );
+  }, [datasets, searchQuery]);
 
   const handleEdit = (dataset: Dataset) => {
     setEditDataset(dataset);
@@ -62,14 +74,12 @@ export function DatasetListPage() {
           </Typography>
         </Stack>
 
-        <Card>
-          <CardContent>
-            <EmptyState
-              title="No project selected"
-              description="Select a project from the Dashboard to view its datasets."
-            />
-          </CardContent>
-        </Card>
+        <Paper variant="outlined" sx={{ borderRadius: 3, p: 4 }}>
+          <EmptyState
+            title="No project selected"
+            description="Select a project from the top navigation or dashboard to view its datasets."
+          />
+        </Paper>
       </Stack>
     );
   }
@@ -84,6 +94,7 @@ export function DatasetListPage() {
 
   return (
     <Stack spacing={3}>
+      {/* Header Section */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
@@ -98,37 +109,115 @@ export function DatasetListPage() {
           </Typography>
 
           <Typography variant="body2" color="text.secondary">
-            Manage datasets for the selected project.
+            Manage datasets and evaluation data for the selected project.
           </Typography>
         </Stack>
 
         <Button
           variant="contained"
+          disableElevation
           startIcon={<AddOutlined />}
           onClick={() => setCreateOpen(true)}
+          sx={{
+            borderRadius: 2,
+            textTransform: "none",
+            fontWeight: 600,
+            px: 2.5,
+          }}
         >
           Create Dataset
         </Button>
       </Stack>
 
-      {!data || data.length === 0 ? (
-        <Card>
-          <CardContent>
-            <EmptyState
-              title="No datasets yet"
-              description="Create your first dataset for this project to get started."
-            />
-          </CardContent>
-        </Card>
+      {/* Main Content Area */}
+      {datasets.length === 0 ? (
+        <Paper
+          variant="outlined"
+          sx={{ borderRadius: 3, p: 4, textAlign: "center" }}
+        >
+          <EmptyState
+            title="No datasets yet"
+            description="Create your first dataset for this project to start managing evaluation test cases."
+          />
+          <Button
+            variant="outlined"
+            startIcon={<AddOutlined />}
+            onClick={() => setCreateOpen(true)}
+            sx={{
+              mt: 2,
+              borderRadius: 2,
+              textTransform: "none",
+              fontWeight: 600,
+            }}
+          >
+            Create First Dataset
+          </Button>
+        </Paper>
       ) : (
-        <DatasetTable
-          datasets={data}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onViewVersions={handleViewVersions}
-        />
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            overflow: "hidden",
+            borderColor: "divider",
+          }}
+        >
+          {/* Table Header Toolbar */}
+          <Box
+            sx={{
+              p: 2,
+              borderBottom: 1,
+              borderColor: "divider",
+              bgcolor: "background.neutral",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 2,
+              flexWrap: "wrap",
+            }}
+          >
+            <TextField
+              size="small"
+              placeholder="Search datasets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchOutlined fontSize="small" color="action" />
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: "background.paper",
+                    width: { xs: "100%", sm: 300 },
+                  },
+                },
+              }}
+            />
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 600 }}
+            >
+              Showing {filteredDatasets.length} of {datasets.length}{" "}
+              {datasets.length === 1 ? "dataset" : "datasets"}
+            </Typography>
+          </Box>
+
+          {/* Table */}
+          <DatasetTable
+            datasets={filteredDatasets}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onViewVersions={handleViewVersions}
+          />
+        </Paper>
       )}
 
+      {/* Dialog Modals */}
       <DatasetCreateDialog
         open={createOpen}
         projectId={selectedProjectId}

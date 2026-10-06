@@ -1,5 +1,12 @@
 import {
-  Box,
+  CheckCircleOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  Remove,
+  VisibilityOutlined,
+} from "@mui/icons-material";
+import {
+  Chip,
   IconButton,
   Paper,
   Stack,
@@ -49,11 +56,15 @@ export function DatasetCaseTable({
   onDelete,
 }: DatasetCaseTableProps) {
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table>
+    <TableContainer
+      component={Paper}
+      variant="outlined"
+      sx={{ borderRadius: 0, border: 0 }}
+    >
+      <Table sx={{ minWidth: 650 }}>
         <TableHead>
-          <TableRow>
-            <TableCell sx={{ width: 80 }}>
+          <TableRow sx={{ bgcolor: "action.hover" }}>
+            <TableCell sx={{ width: 70 }}>
               <DataTableSortLabel
                 field="position"
                 activeField={sortField}
@@ -63,7 +74,7 @@ export function DatasetCaseTable({
               />
             </TableCell>
 
-            <TableCell>
+            <TableCell sx={{ minWidth: 220 }}>
               <DataTableSortLabel
                 field="input"
                 activeField={sortField}
@@ -73,7 +84,7 @@ export function DatasetCaseTable({
               />
             </TableCell>
 
-            <TableCell>
+            <TableCell sx={{ minWidth: 220 }}>
               <DataTableSortLabel
                 field="expected_output"
                 activeField={sortField}
@@ -85,7 +96,7 @@ export function DatasetCaseTable({
 
             {ready && (
               <>
-                <TableCell>
+                <TableCell sx={{ width: 130 }}>
                   <DataTableSortLabel
                     field="has_reference"
                     activeField={sortField}
@@ -95,7 +106,7 @@ export function DatasetCaseTable({
                   />
                 </TableCell>
 
-                <TableCell>
+                <TableCell sx={{ width: 130 }}>
                   <DataTableSortLabel
                     field="has_context"
                     activeField={sortField}
@@ -107,7 +118,9 @@ export function DatasetCaseTable({
               </>
             )}
 
-            <TableCell align="right">Actions</TableCell>
+            <TableCell align="right" sx={{ width: 120 }}>
+              Actions
+            </TableCell>
           </TableRow>
         </TableHead>
 
@@ -117,13 +130,16 @@ export function DatasetCaseTable({
               key={datasetCase.id}
               hover
               sx={{
-                "&:last-child td, &:last-child th": {
-                  border: 0,
-                },
+                "&:last-child td, &:last-child th": { border: 0 },
+                transition: "background-color 0.2s ease",
               }}
             >
               <TableCell>
-                <Typography variant="body2">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontWeight: 600 }}
+                >
                   {datasetCase.position + 1}
                 </Typography>
               </TableCell>
@@ -136,6 +152,7 @@ export function DatasetCaseTable({
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
                     overflow: "hidden",
+                    fontWeight: 500,
                   }}
                 >
                   {datasetCase.input}
@@ -148,13 +165,16 @@ export function DatasetCaseTable({
                   color={
                     datasetCase.expected_output
                       ? "text.primary"
-                      : "text.secondary"
+                      : "text.disabled"
                   }
                   sx={{
                     display: "-webkit-box",
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
                     overflow: "hidden",
+                    fontStyle: datasetCase.expected_output
+                      ? "normal"
+                      : "italic",
                   }}
                 >
                   {datasetCase.expected_output ?? "Not provided"}
@@ -164,35 +184,53 @@ export function DatasetCaseTable({
               {ready && (
                 <>
                   <TableCell>
-                    <Typography
-                      variant="body2"
-                      aria-label={
-                        datasetCase.has_reference
-                          ? "Reference available"
-                          : "Reference not available"
-                      }
-                      sx={{
-                        fontWeight: 600,
-                      }}
-                    >
-                      {datasetCase.has_reference ? "✓" : "—"}
-                    </Typography>
+                    {datasetCase.has_reference ? (
+                      <Chip
+                        icon={<CheckCircleOutlined fontSize="small" />}
+                        label="Ready"
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        sx={{ borderRadius: 1.5, fontWeight: 600 }}
+                      />
+                    ) : (
+                      <Chip
+                        icon={<Remove fontSize="small" />}
+                        label="None"
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          borderRadius: 1.5,
+                          color: "text.disabled",
+                          borderColor: "divider",
+                        }}
+                      />
+                    )}
                   </TableCell>
 
                   <TableCell>
-                    <Typography
-                      variant="body2"
-                      aria-label={
-                        datasetCase.has_context
-                          ? "Context available"
-                          : "Context not available"
-                      }
-                      sx={{
-                        fontWeight: 600,
-                      }}
-                    >
-                      {datasetCase.has_context ? "✓" : "—"}
-                    </Typography>
+                    {datasetCase.has_context ? (
+                      <Chip
+                        icon={<CheckCircleOutlined fontSize="small" />}
+                        label="Ready"
+                        size="small"
+                        color="info"
+                        variant="outlined"
+                        sx={{ borderRadius: 1.5, fontWeight: 600 }}
+                      />
+                    ) : (
+                      <Chip
+                        icon={<Remove fontSize="small" />}
+                        label="None"
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          borderRadius: 1.5,
+                          color: "text.disabled",
+                          borderColor: "divider",
+                        }}
+                      />
+                    )}
                   </TableCell>
                 </>
               )}
@@ -201,23 +239,16 @@ export function DatasetCaseTable({
                 <Stack
                   direction="row"
                   spacing={0.5}
-                  sx={{ justifyContent: "flex-end" }}
+                  sx={{ justifyContent: "flex-end", alignItems: "center" }}
                 >
                   <Tooltip title="View case">
                     <IconButton
                       aria-label={`View case ${datasetCase.position + 1}`}
                       onClick={() => onView(datasetCase)}
                       size="small"
+                      color="primary"
                     >
-                      <Box
-                        component="img"
-                        src="/svg/view.svg"
-                        alt=""
-                        sx={{
-                          width: 24,
-                          height: 24,
-                        }}
-                      />
+                      <VisibilityOutlined fontSize="small" />
                     </IconButton>
                   </Tooltip>
 
@@ -228,16 +259,9 @@ export function DatasetCaseTable({
                           aria-label={`Edit case ${datasetCase.position + 1}`}
                           onClick={() => onEdit(datasetCase)}
                           size="small"
+                          color="info"
                         >
-                          <Box
-                            component="img"
-                            src="/svg/edit.svg"
-                            alt=""
-                            sx={{
-                              width: 24,
-                              height: 24,
-                            }}
-                          />
+                          <EditOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
 
@@ -246,16 +270,9 @@ export function DatasetCaseTable({
                           aria-label={`Delete case ${datasetCase.position + 1}`}
                           onClick={() => onDelete(datasetCase)}
                           size="small"
+                          color="error"
                         >
-                          <Box
-                            component="img"
-                            src="/svg/delete.svg"
-                            alt=""
-                            sx={{
-                              width: 24,
-                              height: 24,
-                            }}
-                          />
+                          <DeleteOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
                     </>

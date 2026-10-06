@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Stack, TextField } from "@mui/material";
+import { Button, CircularProgress, Stack, TextField } from "@mui/material";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -77,31 +77,48 @@ export function DatasetCaseForm({
   return (
     <Stack component="form" spacing={2.5} onSubmit={handleSubmit(onSubmit)}>
       <TextField
-        label="Input"
+        label="Input Prompt / Context"
+        placeholder="Enter input text or prompt scenario..."
         fullWidth
         multiline
-        minRows={4}
+        minRows={3}
+        maxRows={8}
         {...register("input")}
         error={Boolean(errors.input)}
         helperText={errors.input?.message}
         disabled={submitting}
+        slotProps={{
+          input: {
+            sx: { borderRadius: 2 },
+          },
+        }}
       />
 
       <TextField
-        label="Expected Output"
+        label="Expected Output (Optional)"
+        placeholder="Enter ground truth or expected evaluation response..."
+        fullWidth
+        multiline
+        minRows={3}
+        maxRows={8}
+        {...register("expected_output")}
+        error={Boolean(errors.expected_output)}
+        helperText={errors.expected_output?.message}
+        disabled={submitting}
+        slotProps={{
+          input: {
+            sx: { borderRadius: 2 },
+          },
+        }}
+      />
+
+      <TextField
+        label="Case Metadata (JSON)"
         fullWidth
         multiline
         minRows={4}
-        {...register("expected_output")}
-        disabled={submitting}
-      />
-
-      <TextField
-        label="Metadata (JSON)"
-        fullWidth
-        multiline
-        minRows={5}
-        placeholder={'{\n  "category": "example"\n}'}
+        maxRows={10}
+        placeholder={'{\n  "category": "example",\n  "difficulty": "hard"\n}'}
         {...register("case_metadata")}
         error={Boolean(errors.case_metadata)}
         helperText={
@@ -109,14 +126,46 @@ export function DatasetCaseForm({
           "Optional. Must be a valid JSON object."
         }
         disabled={submitting}
+        slotProps={{
+          input: {
+            sx: {
+              borderRadius: 2,
+              fontFamily: "monospace",
+              fontSize: "0.875rem",
+            },
+          },
+        }}
       />
 
-      <Stack direction="row" spacing={1.5} sx={{ justifyContent: "flex-end" }}>
-        <Button type="button" onClick={onCancel} disabled={submitting}>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        sx={{ justifyContent: "flex-end", pt: 1 }}
+      >
+        <Button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+        >
           Cancel
         </Button>
 
-        <Button type="submit" variant="contained" disabled={submitting}>
+        <Button
+          type="submit"
+          variant="contained"
+          disableElevation
+          disabled={submitting}
+          startIcon={
+            submitting ? <CircularProgress size={16} color="inherit" /> : null
+          }
+          sx={{
+            borderRadius: 2,
+            textTransform: "none",
+            fontWeight: 600,
+            px: 2.5,
+          }}
+        >
           {submitting ? "Saving..." : isEdit ? "Save Changes" : "Add Case"}
         </Button>
       </Stack>

@@ -8,6 +8,8 @@ import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { DatasetVersionListPage } from "../features/datasetVersions/DatasetVersionListPage";
 import { DatasetVersionDetailPage } from "../features/datasetVersions/DatasetVersionDetailPage";
 import { DatasetCaseListPage } from "../features/datasetCases/DatasetCaseListPage";
+import { EvaluationListPage } from "../features/evaluations/EvaluationListPage";
+import { EvaluationViewPage } from "../features/evaluations/EvaluationViewPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return <h1>{title}</h1>;
@@ -34,9 +36,10 @@ export function AppRoutes() {
           element={<DatasetCaseListPage />}
         />
         <Route path="/models" element={<ModelListPage />} />
+        <Route path="/evaluations" element={<EvaluationListPage />} />
         <Route
-          path="/evaluations"
-          element={<PlaceholderPage title="Evaluations" />}
+          path="/evaluations/:evaluationId"
+          element={<EvaluationViewPage />}
         />
         <Route
           path="/experiments"
