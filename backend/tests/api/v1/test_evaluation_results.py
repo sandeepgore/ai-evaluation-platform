@@ -78,6 +78,13 @@ def test_list_evaluation_results():
     response_data = EvaluationResultListResponse(
         items=[EvaluationResultResponse.model_validate(result)],
         total=1,
+        statistics={
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+            "pending": 0,
+            "not_applicable": 0,
+        },
     )
 
     with patch(
@@ -112,6 +119,7 @@ def test_get_evaluation_run_statistics():
         "completed": 8,
         "failed": 1,
         "pending": 1,
+        "not_applicable": 0,
     }
 
     with patch(
@@ -128,3 +136,4 @@ def test_get_evaluation_run_statistics():
     assert data["completed"] == 8
     assert data["failed"] == 1
     assert data["pending"] == 1
+    assert data["not_applicable"] == 0

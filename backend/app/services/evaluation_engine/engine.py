@@ -655,12 +655,17 @@ class EvaluationEngine:
                 failed_cases += 1
                 continue
 
+            if evaluation_result.status == "not_applicable":
+                not_applicable_cases += 1
+                continue
+
             if evaluation_result.status != "completed":
                 continue
 
             scores = evaluation_result.scores or {}
             overall = scores.get("overall") or {}
 
+            # Backward compatibility for legacy N/A results.
             if overall.get("status") == "not_applicable":
                 not_applicable_cases += 1
                 continue
@@ -682,6 +687,9 @@ class EvaluationEngine:
 
         if evaluation_result.status == "failed":
             return "failed"
+
+        if evaluation_result.status == "not_applicable":
+            return "not_applicable"
 
         if evaluation_result.status != "completed":
             return None
@@ -749,7 +757,7 @@ class EvaluationEngine:
 
         Fresh execution always creates the result.
 
-        During retry, an existing completed/N/A result is left untouched.
+        During retry, an existing not-applicable result is left untouched.
         """
         existing_result = None
 
@@ -764,7 +772,7 @@ class EvaluationEngine:
                 overall = scores.get("overall") or {}
 
                 if (
-                    existing_result.status == "completed"
+                    existing_result.status == "not_applicable"
                     and overall.get("status") == "not_applicable"
                 ):
                     return
@@ -798,7 +806,7 @@ class EvaluationEngine:
                 self.db,
                 evaluation_run_id=run.id,
                 dataset_case_id=case.id,
-                status="completed",
+                status="not_applicable",
                 actual_output=None,
                 expected_output=case.expected_output,
                 scores=scores,
@@ -817,7 +825,7 @@ class EvaluationEngine:
             evaluation_result = await EvaluationResultService.update(
                 self.db,
                 existing_result,
-                status="completed",
+                status="not_applicable",
                 actual_output=None,
                 expected_output=case.expected_output,
                 scores=scores,
@@ -892,7 +900,6 @@ class EvaluationEngine:
                         "reason": decision.reason,
                     },
                 }
-
                 continue
 
             evaluation_context: dict[str, Any] = {
@@ -906,9 +913,7 @@ class EvaluationEngine:
             )
 
             if case_metadata:
-                evaluation_context.update(
-                    case_metadata,
-                )
+                evaluation_context.update(case_metadata)
 
             evaluation_score = await evaluator.evaluate(
                 expected_output=case.expected_output,
@@ -935,7 +940,6 @@ class EvaluationEngine:
         }
 
         case_scoring_configuration = scoring_configuration.copy()
-
         case_scoring_configuration["weights"] = {
             evaluator.name: weight for evaluator, weight in evaluator_configs
         }
@@ -951,7 +955,6 @@ class EvaluationEngine:
                 "status": "completed",
                 "metadata": scoring_result.metadata,
             }
-
         else:
             scores["overall"] = {
                 "score": None,
@@ -971,12 +974,20 @@ class EvaluationEngine:
                 case=case,
             )
 
+        previous_state = self._get_result_counter_state(existing_result)
+
+        new_state = (
+            "not_applicable"
+            if (scores.get("overall") or {}).get("status") == "not_applicable"
+            else "completed"
+        )
+
         if existing_result is None:
             evaluation_result = await EvaluationResultService.create(
                 self.db,
                 evaluation_run_id=run.id,
                 dataset_case_id=case.id,
-                status="completed",
+                status=new_state,
                 actual_output=response.output,
                 expected_output=case.expected_output,
                 scores=scores,
@@ -992,7 +1003,7 @@ class EvaluationEngine:
             evaluation_result = await EvaluationResultService.update(
                 self.db,
                 existing_result,
-                status="completed",
+                status=new_state,
                 actual_output=response.output,
                 expected_output=case.expected_output,
                 scores=scores,
@@ -1004,14 +1015,6 @@ class EvaluationEngine:
                 total_tokens=response.total_tokens,
                 error_message=None,
             )
-
-        previous_state = self._get_result_counter_state(existing_result)
-
-        new_state = (
-            "not_applicable"
-            if (scores.get("overall") or {}).get("status") == "not_applicable"
-            else "completed"
-        )
 
         self._update_run_counters(
             run=run,

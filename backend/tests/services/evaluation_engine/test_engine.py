@@ -2701,7 +2701,7 @@ async def test_engine_does_not_call_model_when_no_evaluator_is_applicable(
 
     not_applicable_result = not_applicable_results[0]
 
-    assert not_applicable_result["status"] == "completed"
+    assert not_applicable_result["status"] == "not_applicable"
     assert not_applicable_result["scores"]["exact_match"]["score"] is None
     assert not_applicable_result["scores"]["overall"]["status"] == "not_applicable"
     assert not_applicable_result["scores"]["overall"]["score"] is None

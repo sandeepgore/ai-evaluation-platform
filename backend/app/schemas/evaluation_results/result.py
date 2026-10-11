@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+
 class EvaluationResultResponse(BaseModel):
     id: UUID
 
@@ -35,14 +36,15 @@ class EvaluationResultResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class EvaluationResultListResponse(BaseModel):
-    items: list[EvaluationResultResponse]
-    total: int
-
-
 class EvaluationResultStatisticsResponse(BaseModel):
     total: int
     completed: int
     failed: int
     pending: int
+    not_applicable: int
 
+
+class EvaluationResultListResponse(BaseModel):
+    items: list[EvaluationResultResponse]
+    total: int
+    statistics: EvaluationResultStatisticsResponse

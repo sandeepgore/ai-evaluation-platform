@@ -49,6 +49,11 @@ class EvaluationRunSummaryService:
     ) -> bool:
         """Return True when the entire evaluation case was not applicable."""
 
+        # New persisted status.
+        if result.status == "not_applicable":
+            return True
+
+        # Legacy records stored N/A as completed.
         if result.status != "completed":
             return False
 
@@ -239,7 +244,7 @@ class EvaluationRunSummaryService:
             # Completed / case-level N/A result
             # ----------------------------------------------------------
 
-            if result.status != "completed":
+            if result.status not in ("completed", "not_applicable"):
                 continue
 
             # A case-level N/A result is not an executed case.
