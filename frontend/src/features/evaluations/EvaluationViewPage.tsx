@@ -1,4 +1,10 @@
-import React, { useEffect } from "react";
+import {
+  ArrowBackOutlined,
+  AssessmentOutlined,
+  PlayCircleOutlined,
+  RefreshOutlined,
+  TableChartOutlined,
+} from "@mui/icons-material";
 import {
   Alert,
   Box,
@@ -15,17 +21,15 @@ import {
   useTheme,
 } from "@mui/material";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
-import {
-  ArrowBackOutlined,
-  RefreshOutlined,
-  AssessmentOutlined,
-  TableChartOutlined,
-} from "@mui/icons-material";
 
 import { useDataset } from "../datasets/hooks";
 import { useDatasetVersion } from "../datasetVersions/hooks";
 import { useModel } from "../models/hooks";
-import { useEvaluationRun, useEvaluationRunStatus } from "./hooks";
+import {
+  useEvaluationRun,
+  useEvaluationRunStatus,
+  useExecuteEvaluationRun,
+} from "./hooks";
 
 const STATUS_CONFIG: Record<
   string,
@@ -45,6 +49,7 @@ const STATUS_CONFIG: Record<
   running: { label: "Running", color: "info" },
   completed: { label: "Completed", color: "success" },
   failed: { label: "Failed", color: "error" },
+  cancelled: { label: "Cancelled", color: "default" },
 };
 
 const EVALUATION_TYPE_LABELS: Record<string, string> = {
@@ -56,6 +61,7 @@ const EVALUATION_TYPE_LABELS: Record<string, string> = {
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
+
   return new Date(value).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -71,6 +77,7 @@ function formatDuration(durationMs: number | null): string {
 
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.round(seconds % 60);
+
   return `${minutes}m ${remainingSeconds}s`;
 }
 
@@ -84,7 +91,6 @@ export function EvaluationViewPage() {
     isLoading: isRunLoading,
     isError,
     error,
-    refetch: refetchRun,
   } = useEvaluationRun(evaluationId);
 
   const {
@@ -92,6 +98,8 @@ export function EvaluationViewPage() {
     refetch: refreshStatus,
     isFetching: isRefreshing,
   } = useEvaluationRunStatus(evaluationId, Boolean(evaluationId));
+
+  const executeMutation = useExecuteEvaluationRun();
 
   const { data: model, isLoading: isModelLoading } = useModel(
     run?.model_id ?? null,
@@ -128,22 +136,41 @@ export function EvaluationViewPage() {
     status: run?.status ?? "pending",
   };
 
-  const isRunning = progressSource.status === "running";
   const isPending = progressSource.status === "pending";
-  const isActive = isRunning || isPending;
-  const isTerminal =
-    progressSource.status === "completed" || progressSource.status === "failed";
+  const isActive = progressSource.status === "running";
+  const isTerminal = ["completed", "failed", "cancelled"].includes(
+    progressSource.status,
+  );
 
-  useEffect(() => {
-    if (!isActive || !evaluationId) return;
+  const palette = theme.palette;
+  const statusConfig = STATUS_CONFIG[progressSource.status] ?? {
+    label: progressSource.status,
+    color: "default" as const,
+  };
 
-    const interval = setInterval(() => {
-      refreshStatus();
-      refetchRun();
-    }, 3000);
+  const caseColors = {
+    completed: palette.success.main,
+    failed: palette.error.main,
+    notApplicable: palette.grey[500],
+  };
 
-    return () => clearInterval(interval);
-  }, [isActive, evaluationId, refreshStatus, refetchRun]);
+  const panelBackground =
+    theme.palette.mode === "dark"
+      ? alpha(palette.common.white, 0.035)
+      : alpha(palette.common.black, 0.018);
+
+  const subtleBorder = alpha(
+    palette.text.primary,
+    theme.palette.mode === "dark" ? 0.14 : 0.09,
+  );
+
+  const metricCardSx = {
+    p: 2,
+    textAlign: "center" as const,
+    borderRadius: 2,
+    borderColor: subtleBorder,
+    bgcolor: panelBackground,
+  };
 
   if (isRunLoading) {
     return (
@@ -152,7 +179,7 @@ export function EvaluationViewPage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          minHeight: "400px",
+          minHeight: 400,
         }}
       >
         <CircularProgress size={32} />
@@ -191,14 +218,32 @@ export function EvaluationViewPage() {
         ? "Loading dataset version..."
         : "Unknown Dataset Version";
 
-  const total = progressSource.total_cases || 1;
+  const total = Math.max(progressSource.total_cases, 1);
+
   const completedPct = (progressSource.completed_cases / total) * 100;
   const failedPct = (progressSource.failed_cases / total) * 100;
   const naPct = (progressSource.not_applicable_cases / total) * 100;
 
+  const metadata = [
+    { label: "Dataset Version", value: datasetVersionName },
+    { label: "Model Targeted", value: modelName },
+    {
+      label: "Evaluation Category",
+      value: EVALUATION_TYPE_LABELS[run.evaluation_type] ?? run.evaluation_type,
+    },
+    { label: "Execution Mode", value: run.mode },
+    { label: "Created At", value: formatDate(run.created_at) },
+    { label: "Started At", value: formatDate(progressSource.started_at) },
+    { label: "Completed At", value: formatDate(progressSource.completed_at) },
+    {
+      label: "Total Duration",
+      value: formatDuration(progressSource.duration_ms),
+    },
+  ];
+
   return (
     <Stack spacing={3} sx={{ pb: 6 }}>
-      {/* Header & Navigation */}
+      {/* Header and Navigation */}
       <Stack spacing={1.5}>
         <Breadcrumbs aria-label="breadcrumb">
           <Typography
@@ -213,6 +258,7 @@ export function EvaluationViewPage() {
           >
             Evaluations
           </Typography>
+
           <Typography
             variant="body2"
             color="text.primary"
@@ -230,7 +276,7 @@ export function EvaluationViewPage() {
             alignItems: { xs: "flex-start", sm: "center" },
           }}
         >
-          <Box>
+          <Box sx={{ minWidth: 0 }}>
             <Typography variant="h4" sx={{ fontWeight: 700 }}>
               {run.name}
             </Typography>
@@ -246,17 +292,19 @@ export function EvaluationViewPage() {
           <Stack
             direction="row"
             spacing={1.5}
+            useFlexGap
             sx={{
               alignItems: "center",
               flexWrap: "wrap",
+              rowGap: 1,
             }}
           >
             <Chip
-              label={
-                STATUS_CONFIG[progressSource.status]?.label ??
-                progressSource.status
+              label={statusConfig.label}
+              color={statusConfig.color}
+              variant={
+                progressSource.status === "cancelled" ? "outlined" : "filled"
               }
-              color={STATUS_CONFIG[progressSource.status]?.color ?? "default"}
               sx={{
                 fontWeight: 600,
                 borderRadius: 1.5,
@@ -264,11 +312,40 @@ export function EvaluationViewPage() {
               }}
             />
 
+            {isPending && (
+              <Button
+                variant="contained"
+                color="primary"
+                disableElevation
+                disabled={executeMutation.isPending || !evaluationId}
+                startIcon={
+                  executeMutation.isPending ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <PlayCircleOutlined />
+                  )
+                }
+                onClick={() => {
+                  if (evaluationId) {
+                    executeMutation.mutate(evaluationId);
+                  }
+                }}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: "none",
+                  fontWeight: 600,
+                }}
+              >
+                {executeMutation.isPending ? "Submitting..." : "Run Evaluation"}
+              </Button>
+            )}
+
             {isActive && (
               <Button
                 variant="outlined"
+                color="info"
                 size="small"
-                onClick={() => refreshStatus()}
+                onClick={() => void refreshStatus()}
                 disabled={isRefreshing}
                 startIcon={
                   isRefreshing ? (
@@ -287,6 +364,7 @@ export function EvaluationViewPage() {
               <>
                 <Button
                   variant="contained"
+                  color="primary"
                   disableElevation
                   startIcon={<AssessmentOutlined />}
                   onClick={() => navigate(`/evaluations/${run.id}/summary`)}
@@ -301,6 +379,7 @@ export function EvaluationViewPage() {
 
                 <Button
                   variant="outlined"
+                  color="primary"
                   startIcon={<TableChartOutlined />}
                   onClick={() => navigate(`/evaluations/${run.id}/results`)}
                   sx={{
@@ -317,21 +396,22 @@ export function EvaluationViewPage() {
         </Stack>
       </Stack>
 
-      {/* Execution Progress Section */}
+      {/* Execution Progress */}
       <Paper
         variant="outlined"
         sx={{
-          p: 3,
+          p: { xs: 2, sm: 3 },
           borderRadius: 3,
-          borderColor: "divider",
+          borderColor: subtleBorder,
         }}
       >
         <Stack spacing={2.5}>
           <Stack
-            direction="row"
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1}
             sx={{
               justifyContent: "space-between",
-              alignItems: "baseline",
+              alignItems: { xs: "flex-start", sm: "baseline" },
             }}
           >
             <Box>
@@ -339,29 +419,33 @@ export function EvaluationViewPage() {
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
                   Execution Progress
                 </Typography>
-                {isActive && (
-                  <CircularProgress size={16} sx={{ color: "primary.main" }} />
-                )}
+
+                {isActive && <CircularProgress size={16} color="info" />}
               </Stack>
 
               <Typography variant="body2" color="text.secondary">
                 {isPending
-                  ? "Queued for processing..."
+                  ? "Not started. Submit this evaluation when you're ready."
                   : `${progressSource.processed_cases} of ${progressSource.total_cases} test cases evaluated.`}
               </Typography>
             </Box>
 
-            <Typography variant="h5" color="primary" sx={{ fontWeight: 700 }}>
+            <Typography
+              variant="h5"
+              color="primary.main"
+              sx={{ fontWeight: 700 }}
+            >
               {progressSource.progress_percent.toFixed(1)}%
             </Typography>
           </Stack>
 
           {/* Segmented Progress Bar */}
           <Box
+            aria-label="Evaluation case status distribution"
             sx={{
               height: 12,
               borderRadius: 6,
-              bgcolor: alpha(theme.palette.text.primary, 0.08),
+              bgcolor: alpha(palette.text.primary, 0.08),
               overflow: "hidden",
               display: "flex",
               width: "100%",
@@ -371,7 +455,7 @@ export function EvaluationViewPage() {
               <Box
                 sx={{
                   width: `${completedPct}%`,
-                  bgcolor: "success.main",
+                  bgcolor: caseColors.completed,
                   transition: "width 0.4s ease",
                 }}
               />
@@ -381,43 +465,70 @@ export function EvaluationViewPage() {
               <Box
                 sx={{
                   width: `${failedPct}%`,
-                  bgcolor: "error.main",
+                  bgcolor: caseColors.failed,
                   transition: "width 0.4s ease",
                 }}
               />
             </Tooltip>
 
-            <Tooltip title={`N/A: ${progressSource.not_applicable_cases}`}>
+            <Tooltip
+              title={`Not applicable: ${progressSource.not_applicable_cases}`}
+            >
               <Box
                 sx={{
                   width: `${naPct}%`,
-                  bgcolor: "grey.500",
+                  bgcolor: caseColors.notApplicable,
                   transition: "width 0.4s ease",
                 }}
               />
             </Tooltip>
           </Box>
 
+          {/* Legend */}
+          <Stack
+            direction="row"
+            spacing={2}
+            useFlexGap
+            sx={{ flexWrap: "wrap" }}
+          >
+            {[
+              { label: "Completed", color: caseColors.completed },
+              { label: "Failed", color: caseColors.failed },
+              { label: "Not applicable", color: caseColors.notApplicable },
+            ].map((item) => (
+              <Stack
+                key={item.label}
+                direction="row"
+                spacing={0.75}
+                sx={{ alignItems: "center" }}
+              >
+                <Box
+                  sx={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: "50%",
+                    bgcolor: item.color,
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {item.label}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+
           {/* Case Counters */}
           <Box
             sx={{
               display: "grid",
               gridTemplateColumns: {
-                xs: "repeat(2, 1fr)",
-                sm: "repeat(4, 1fr)",
+                xs: "repeat(2, minmax(0, 1fr))",
+                sm: "repeat(4, minmax(0, 1fr))",
               },
               gap: 2,
             }}
           >
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                textAlign: "center",
-                borderRadius: 2,
-                bgcolor: "background.neutral",
-              }}
-            >
+            <Paper variant="outlined" sx={metricCardSx}>
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -434,15 +545,7 @@ export function EvaluationViewPage() {
               </Typography>
             </Paper>
 
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                textAlign: "center",
-                borderRadius: 2,
-                bgcolor: "background.neutral",
-              }}
-            >
+            <Paper variant="outlined" sx={metricCardSx}>
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -459,40 +562,27 @@ export function EvaluationViewPage() {
               </Typography>
             </Paper>
 
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                textAlign: "center",
-                borderRadius: 2,
-                bgcolor: "background.neutral",
-              }}
-            >
+            <Paper variant="outlined" sx={metricCardSx}>
               <Typography
                 variant="caption"
                 color="text.secondary"
                 sx={{ fontWeight: 600, textTransform: "uppercase" }}
               >
-                N/A
+                Not Applicable
               </Typography>
               <Typography
                 variant="h6"
-                color="text.secondary"
-                sx={{ fontWeight: 700, mt: 0.5 }}
+                sx={{
+                  color: caseColors.notApplicable,
+                  fontWeight: 700,
+                  mt: 0.5,
+                }}
               >
                 {progressSource.not_applicable_cases}
               </Typography>
             </Paper>
 
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                textAlign: "center",
-                borderRadius: 2,
-                bgcolor: "background.neutral",
-              }}
-            >
+            <Paper variant="outlined" sx={metricCardSx}>
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -505,16 +595,37 @@ export function EvaluationViewPage() {
               </Typography>
             </Paper>
           </Box>
+
+          {isTerminal && progressSource.failed_cases > 0 && (
+            <Alert
+              severity="warning"
+              variant="outlined"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => navigate(`/evaluations/${run.id}/results`)}
+                  sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+                >
+                  Inspect failures
+                </Button>
+              }
+            >
+              This run finished with {progressSource.failed_cases} failed case
+              {progressSource.failed_cases === 1 ? "" : "s"}. A completed run
+              does not mean every case succeeded.
+            </Alert>
+          )}
         </Stack>
       </Paper>
 
-      {/* Run Metadata Details */}
+      {/* Run Configuration and Timing */}
       <Paper
         variant="outlined"
         sx={{
-          p: 3,
+          p: { xs: 2, sm: 3 },
           borderRadius: 3,
-          borderColor: "divider",
+          borderColor: subtleBorder,
         }}
       >
         <Typography variant="h6" sx={{ fontWeight: 600 }} gutterBottom>
@@ -527,131 +638,39 @@ export function EvaluationViewPage() {
           sx={{
             display: "grid",
             gridTemplateColumns: {
-              xs: "repeat(1, 1fr)",
-              sm: "repeat(2, 1fr)",
-              md: "repeat(4, 1fr)",
+              xs: "repeat(1, minmax(0, 1fr))",
+              sm: "repeat(2, minmax(0, 1fr))",
+              md: "repeat(4, minmax(0, 1fr))",
             },
             gap: 3,
           }}
         >
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Dataset Version
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 500 }}>
-              {datasetVersionName}
-            </Typography>
-          </Box>
+          {metadata.map((item) => (
+            <Box key={item.label} sx={{ minWidth: 0 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontWeight: 600, display: "block" }}
+              >
+                {item.label}
+              </Typography>
 
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Model Targeted
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 500 }}>
-              {modelName}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Evaluation Category
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 500 }}>
-              {EVALUATION_TYPE_LABELS[run.evaluation_type] ??
-                run.evaluation_type}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Execution Mode
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                mt: 0.5,
-                fontWeight: 500,
-                textTransform: "capitalize",
-              }}
-            >
-              {run.mode}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Created At
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {formatDate(run.created_at)}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Started At
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {formatDate(progressSource.started_at)}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Completed At
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {formatDate(progressSource.completed_at)}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, display: "block" }}
-            >
-              Total Duration
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                mt: 0.5,
-                fontWeight: 600,
-                fontFamily: "monospace",
-              }}
-            >
-              {formatDuration(progressSource.duration_ms)}
-            </Typography>
-          </Box>
+              <Typography
+                variant="body2"
+                sx={{
+                  mt: 0.5,
+                  fontWeight: item.label === "Total Duration" ? 600 : 500,
+                  fontFamily:
+                    item.label === "Total Duration" ? "monospace" : "inherit",
+                  textTransform:
+                    item.label === "Execution Mode" ? "capitalize" : "none",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {item.value}
+              </Typography>
+            </Box>
+          ))}
         </Box>
       </Paper>
     </Stack>

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import EvaluationResult
@@ -100,33 +100,29 @@ class EvaluationResultService:
         db: AsyncSession,
         evaluation_run_id: UUID,
     ) -> dict:
-        case_not_applicable = (
-            EvaluationResult.status == "completed",
-            EvaluationResult.scores["overall"]["status"].as_string() == "not_applicable",
+
+        overall_status = EvaluationResult.scores["overall"]["status"].as_string()
+
+        not_applicable_condition = or_(
+            EvaluationResult.status == "not_applicable",
+            (EvaluationResult.status == "completed") & (overall_status == "not_applicable"),
+        )
+
+        completed_condition = (EvaluationResult.status == "completed") & (
+            overall_status != "not_applicable"
         )
 
         query = select(
             func.count(EvaluationResult.id).label("total"),
+            func.count(EvaluationResult.id).filter(completed_condition).label("completed"),
             func.count(EvaluationResult.id)
-            .filter(
-                EvaluationResult.status == "completed",
-                ~(EvaluationResult.scores["overall"]["status"].as_string() == "not_applicable"),
-            )
-            .label("completed"),
-            func.count(EvaluationResult.id)
-            .filter(
-                EvaluationResult.status == "failed",
-            )
+            .filter(EvaluationResult.status == "failed")
             .label("failed"),
             func.count(EvaluationResult.id)
-            .filter(
-                EvaluationResult.status == "pending",
-            )
+            .filter(EvaluationResult.status == "pending")
             .label("pending"),
             func.count(EvaluationResult.id)
-            .filter(
-                *case_not_applicable,
-            )
+            .filter(not_applicable_condition)
             .label("not_applicable"),
         ).where(
             EvaluationResult.evaluation_run_id == evaluation_run_id,
@@ -183,9 +179,15 @@ class EvaluationResultService:
         result = await db.execute(query)
         items = result.scalars().all()
 
+        statistics = await EvaluationResultService.get_run_statistics(
+            db,
+            evaluation_run_id,
+        )
+
         return EvaluationResultListResponse(
             items=[EvaluationResultResponse.model_validate(item) for item in items],
             total=total,
+            statistics=statistics,
         )
 
     @staticmethod
