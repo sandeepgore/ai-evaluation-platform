@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Dataset } from "./api";
 
 interface DatasetTableProps {
@@ -25,6 +26,9 @@ interface DatasetTableProps {
   onEdit: (dataset: Dataset) => void;
   onDelete: (dataset: Dataset) => void;
   onViewVersions: (dataset: Dataset) => void;
+  sortField?: "name" | "slug" | "dataset_type";
+  sortDirection?: SortDirection;
+  onSort?: (field: "name" | "slug" | "dataset_type") => void;
 }
 
 export function DatasetTable({
@@ -32,6 +36,9 @@ export function DatasetTable({
   onEdit,
   onDelete,
   onViewVersions,
+  sortField = "name",
+  sortDirection = "asc",
+  onSort = () => undefined,
 }: DatasetTableProps) {
   return (
     <TableContainer
@@ -42,9 +49,9 @@ export function DatasetTable({
       <Table sx={{ minWidth: 650 }}>
         <TableHead>
           <TableRow sx={{ bgcolor: "action.hover" }}>
-            <TableCell sx={{ minWidth: 160 }}>Dataset</TableCell>
-            <TableCell sx={{ minWidth: 140 }}>Slug</TableCell>
-            <TableCell sx={{ width: 120 }}>Type</TableCell>
+            <TableCell sx={{ minWidth: 160 }}><DataTableSortLabel field="name" activeField={sortField} direction={sortDirection} label="Dataset" onSort={onSort} /></TableCell>
+            <TableCell sx={{ minWidth: 140 }}><DataTableSortLabel field="slug" activeField={sortField} direction={sortDirection} label="Slug" onSort={onSort} /></TableCell>
+            <TableCell sx={{ width: 120 }}><DataTableSortLabel field="dataset_type" activeField={sortField} direction={sortDirection} label="Type" onSort={onSort} /></TableCell>
             <TableCell sx={{ minWidth: 200 }}>Description</TableCell>
             <TableCell sx={{ width: 110 }}>Status</TableCell>
             <TableCell sx={{ width: 100 }}>Versions</TableCell>
@@ -126,6 +133,7 @@ export function DatasetTable({
                     onClick={() => onViewVersions(dataset)}
                     size="small"
                     color="primary"
+                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
                   >
                     <LayersOutlined fontSize="small" />
                   </IconButton>
@@ -144,6 +152,7 @@ export function DatasetTable({
                       onClick={() => onEdit(dataset)}
                       size="small"
                       color="info"
+                      sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
                     >
                       <EditOutlined fontSize="small" />
                     </IconButton>
@@ -155,6 +164,7 @@ export function DatasetTable({
                       onClick={() => onDelete(dataset)}
                       size="small"
                       color="error"
+                      sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
                     >
                       <DeleteOutlined fontSize="small" />
                     </IconButton>

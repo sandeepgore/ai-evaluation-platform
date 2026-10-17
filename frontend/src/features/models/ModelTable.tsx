@@ -1,5 +1,5 @@
+import { DeleteOutlined, EditOutlined } from "@mui/icons-material";
 import {
-  Box,
   IconButton,
   Paper,
   Table,
@@ -12,12 +12,16 @@ import {
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Model } from "./api";
 
 interface ModelTableProps {
   models: Model[];
   onEdit: (model: Model) => void;
   onDelete: (model: Model) => void;
+  sortField?: "name" | "provider" | "model_identifier";
+  sortDirection?: SortDirection;
+  onSort?: (field: "name" | "provider" | "model_identifier") => void;
 }
 
 const providerLabels: Record<Model["provider"], string> = {
@@ -39,15 +43,15 @@ const modelTypeLabels: Record<Model["model_type"], string> = {
   custom: "Custom",
 };
 
-export function ModelTable({ models, onEdit, onDelete }: ModelTableProps) {
+export function ModelTable({ models, onEdit, onDelete, sortField = "name", sortDirection = "asc", onSort = () => undefined }: ModelTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table>
         <TableHead>
           <TableRow>
-            <TableCell>Model</TableCell>
-            <TableCell>Provider</TableCell>
-            <TableCell>Identifier</TableCell>
+            <TableCell><DataTableSortLabel field="name" activeField={sortField} direction={sortDirection} label="Model" onSort={onSort} /></TableCell>
+            <TableCell><DataTableSortLabel field="provider" activeField={sortField} direction={sortDirection} label="Provider" onSort={onSort} /></TableCell>
+            <TableCell><DataTableSortLabel field="model_identifier" activeField={sortField} direction={sortDirection} label="Identifier" onSort={onSort} /></TableCell>
             <TableCell>Type</TableCell>
             <TableCell>Pricing</TableCell>
             <TableCell>Status</TableCell>
@@ -110,16 +114,10 @@ export function ModelTable({ models, onEdit, onDelete }: ModelTableProps) {
                     aria-label={`Edit ${model.name}`}
                     onClick={() => onEdit(model)}
                     size="small"
+                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
+                    color="info"
                   >
-                    <Box
-                      component="img"
-                      src="/svg/edit.svg"
-                      alt=""
-                      sx={{
-                        width: 24,
-                        height: 24,
-                      }}
-                    />
+                    <EditOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
 
@@ -128,16 +126,10 @@ export function ModelTable({ models, onEdit, onDelete }: ModelTableProps) {
                     aria-label={`Delete ${model.name}`}
                     onClick={() => onDelete(model)}
                     size="small"
+                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
+                    color="error"
                   >
-                    <Box
-                      component="img"
-                      src="/svg/delete.svg"
-                      alt=""
-                      sx={{
-                        width: 24,
-                        height: 24,
-                      }}
-                    />
+                    <DeleteOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </TableCell>

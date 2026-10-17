@@ -11,6 +11,7 @@ import {
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { EmptyState } from "../../components/common/EmptyState";
+import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
 import { useAppContextStore } from "../../store/appContextStore";
@@ -34,6 +35,10 @@ export function DatasetListPage() {
   const [editDataset, setEditDataset] = useState<Dataset | null>(null);
   const [deleteDataset, setDeleteDataset] = useState<Dataset | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<"name" | "slug" | "dataset_type">("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const datasets = useMemo(() => data ?? [], [data]);
 
@@ -48,6 +53,18 @@ export function DatasetListPage() {
         d.dataset_type.toLowerCase().includes(query),
     );
   }, [datasets, searchQuery]);
+
+  const sortedDatasets = useMemo(() => [...filteredDatasets].sort((a, b) => {
+    const comparison = a[sortField].localeCompare(b[sortField]);
+    return sortDirection === "asc" ? comparison : -comparison;
+  }), [filteredDatasets, sortField, sortDirection]);
+  const visibleDatasets = sortedDatasets.slice(page * pageSize, (page + 1) * pageSize);
+
+  const handleSort = (field: "name" | "slug" | "dataset_type") => {
+    if (sortField === field) setSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+    else { setSortField(field); setSortDirection("asc"); }
+    setPage(0);
+  };
 
   const handleEdit = (dataset: Dataset) => {
     setEditDataset(dataset);
@@ -180,7 +197,7 @@ export function DatasetListPage() {
               size="small"
               placeholder="Search datasets..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
               slotProps={{
                 input: {
                   startAdornment: (
@@ -209,11 +226,23 @@ export function DatasetListPage() {
 
           {/* Table */}
           <DatasetTable
-            datasets={filteredDatasets}
+            datasets={visibleDatasets}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSort={handleSort}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onViewVersions={handleViewVersions}
           />
+          {filteredDatasets.length > pageSize && (
+            <DataTablePagination
+              page={page}
+              pageSize={pageSize}
+              total={filteredDatasets.length}
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => { setPageSize(nextPageSize); setPage(0); }}
+            />
+          )}
         </Paper>
       )}
 

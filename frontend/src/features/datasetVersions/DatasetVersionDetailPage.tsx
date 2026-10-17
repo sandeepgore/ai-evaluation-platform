@@ -5,7 +5,6 @@ import {
   DatasetOutlined,
   HelpOutlined,
   ListAltOutlined,
-  ArrowBackOutlined,
   InfoOutlined,
   CheckCircle,
   WarningAmber,
@@ -165,20 +164,6 @@ export function DatasetVersionDetailPage() {
               justifyContent: { xs: "flex-start", md: "flex-end" },
             }}
           >
-            <Button
-              variant="outlined"
-              color="inherit"
-              startIcon={<ArrowBackOutlined fontSize="small" />}
-              onClick={() => navigate(`/datasets/${datasetId}/versions`)}
-              sx={{
-                borderRadius: 2,
-                textTransform: "none",
-                fontWeight: 600,
-                borderColor: "divider",
-              }}
-            >
-              Back
-            </Button>
             <Button
               variant="contained"
               disableElevation

@@ -18,13 +18,19 @@ import {
   getEvaluationResultStatistics,
   type CreateEvaluationRunPayload,
   type ListEvaluationResultsParams,
+  cancelEvaluationRun,
+  createEvaluationSchedule,
+  listEvaluators,
+  getEvaluationRunLogsAvailability,
+  getSchedulerLogsAvailability,
+  type CreateEvaluationSchedulePayload,
 } from "./api";
 
 const evaluationKeys = {
   all: ["evaluations"] as const,
 
-  list: (datasetVersionId?: string, modelId?: string) =>
-    ["evaluations", "list", datasetVersionId, modelId] as const,
+  list: (datasetVersionId?: string, modelId?: string, projectId?: string | null) =>
+    ["evaluations", "list", datasetVersionId, modelId, projectId] as const,
 
   detail: (evaluationId: string) =>
     ["evaluations", "detail", evaluationId] as const,
@@ -60,13 +66,66 @@ const evaluationKeys = {
 export function useEvaluationRuns(params?: {
   datasetVersionId?: string;
   modelId?: string;
+  projectId?: string | null;
 }) {
   return useQuery({
     queryKey: evaluationKeys.list(
       params?.datasetVersionId,
       params?.modelId,
+      params?.projectId,
     ),
-    queryFn: () => listEvaluationRuns(params),
+    queryFn: () => listEvaluationRuns({
+      datasetVersionId: params?.datasetVersionId,
+      modelId: params?.modelId,
+      projectId: params?.projectId ?? undefined,
+    }),
+    enabled: Boolean(params?.projectId),
+  });
+}
+
+export function useEvaluationRunLogsAvailability(runId: string | undefined) {
+  return useQuery({
+    queryKey: ["evaluation-logs", "run", runId],
+    queryFn: () => getEvaluationRunLogsAvailability(runId!),
+    enabled: Boolean(runId),
+    staleTime: 30_000,
+  });
+}
+
+export function useSchedulerLogsAvailability() {
+  return useQuery({
+    queryKey: ["evaluation-logs", "scheduler"],
+    queryFn: getSchedulerLogsAvailability,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateEvaluationSchedule() {
+  const queryClient = useQueryClient();
+  const { notify } = useNotification();
+
+  return useMutation({
+    mutationFn: (payload: CreateEvaluationSchedulePayload) =>
+      createEvaluationSchedule(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["evaluation-schedules"] });
+      notify("Evaluation schedule created.", "success");
+    },
+    onError: (error) => {
+      notify(
+        error instanceof Error ? error.message : "Unable to schedule evaluation.",
+        "error",
+      );
+    },
+  });
+}
+
+export function useEvaluators(enabled = true) {
+  return useQuery({
+    queryKey: ["evaluators"],
+    queryFn: listEvaluators,
+    enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -238,5 +297,50 @@ export function useEvaluationResultStatistics(
       getEvaluationResultStatistics(evaluationRunId!),
 
     enabled: Boolean(evaluationRunId),
+  });
+}
+
+export function useCancelEvaluationRun() {
+  const queryClient = useQueryClient();
+  const { notify } = useNotification();
+
+  return useMutation({
+    mutationFn: (evaluationId: string) =>
+      cancelEvaluationRun(evaluationId),
+
+    onSuccess: (run) => {
+      queryClient.setQueryData(
+        evaluationKeys.detail(run.id),
+        run,
+      );
+
+      void queryClient.invalidateQueries({
+        queryKey: evaluationKeys.detail(run.id),
+      });
+
+      void queryClient.invalidateQueries({
+        queryKey: evaluationKeys.status(run.id),
+      });
+
+      void queryClient.invalidateQueries({
+        queryKey: evaluationKeys.all,
+      });
+
+      notify(
+        run.status === "cancelled"
+          ? "Evaluation cancelled."
+          : "Cancellation requested. Waiting for the evaluation to stop.",
+        "success",
+      );
+    },
+
+    onError: (error) => {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Unable to cancel evaluation.",
+        "error",
+      );
+    },
   });
 }

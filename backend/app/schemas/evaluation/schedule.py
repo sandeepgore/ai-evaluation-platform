@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.evaluation import EvaluationScheduleType
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation.evaluation_type import EvaluationType
 
 
@@ -13,6 +14,7 @@ class EvaluationScheduleCreate(BaseModel):
     model_id: UUID
     name: str = Field(..., min_length=1, max_length=150)
     evaluation_type: EvaluationType = EvaluationType.TEXT
+    mode: EvaluationRunMode = EvaluationRunMode.DEFAULT
     configuration: dict[str, Any] | None = None
     schedule_type: EvaluationScheduleType
     schedule_expression: str | None = Field(
@@ -47,6 +49,7 @@ class EvaluationScheduleCreate(BaseModel):
 
 class EvaluationScheduleUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=150)
+    mode: EvaluationRunMode | None = None
     configuration: dict[str, Any] | None = None
     schedule_expression: str | None = Field(
         default=None,
@@ -66,6 +69,7 @@ class EvaluationScheduleResponse(BaseModel):
     model_id: UUID
     name: str
     evaluation_type: EvaluationType
+    mode: EvaluationRunMode
     configuration: dict[str, Any] | None
     schedule_type: EvaluationScheduleType
     schedule_expression: str | None

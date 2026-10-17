@@ -1,5 +1,5 @@
+import { DeleteOutlined, EditOutlined } from "@mui/icons-material";
 import {
-  Box,
   IconButton,
   Paper,
   Table,
@@ -12,26 +12,33 @@ import {
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Organization } from "./api";
 
 interface OrganizationTableProps {
   organizations: Organization[];
   onEdit: (organization: Organization) => void;
   onDelete: (organization: Organization) => void;
+  sortField?: "name" | "slug";
+  sortDirection?: SortDirection;
+  onSort?: (field: "name" | "slug") => void;
 }
 
 export function OrganizationTable({
   organizations,
   onEdit,
   onDelete,
+  sortField = "name",
+  sortDirection = "asc",
+  onSort = () => undefined,
 }: OrganizationTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table>
         <TableHead>
           <TableRow>
-            <TableCell>Organization</TableCell>
-            <TableCell>Slug</TableCell>
+            <TableCell><DataTableSortLabel field="name" activeField={sortField} direction={sortDirection} label="Organization" onSort={onSort} /></TableCell>
+            <TableCell><DataTableSortLabel field="slug" activeField={sortField} direction={sortDirection} label="Slug" onSort={onSort} /></TableCell>
             <TableCell>Description</TableCell>
             <TableCell>Status</TableCell>
             <TableCell align="right">Actions</TableCell>
@@ -82,16 +89,10 @@ export function OrganizationTable({
                     aria-label={`Edit ${organization.name}`}
                     onClick={() => onEdit(organization)}
                     size="small"
+                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
+                    color="info"
                   >
-                    <Box
-                      component="img"
-                      src="/svg/edit.svg"
-                      alt=""
-                      sx={{
-                        width: 24,
-                        height: 24,
-                      }}
-                    />
+                    <EditOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
 
@@ -100,16 +101,10 @@ export function OrganizationTable({
                     aria-label={`Delete ${organization.name}`}
                     onClick={() => onDelete(organization)}
                     size="small"
+                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
+                    color="error"
                   >
-                    <Box
-                      component="img"
-                      src="/svg/delete.svg"
-                      alt=""
-                      sx={{
-                        width: 24,
-                        height: 24,
-                      }}
-                    />
+                    <DeleteOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </TableCell>

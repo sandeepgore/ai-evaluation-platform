@@ -1,6 +1,8 @@
 import { AddOutlined } from "@mui/icons-material";
 import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
@@ -13,6 +15,20 @@ import { OrganizationDeleteDialog } from "./OrganizationDeleteDialog";
 
 export function OrganizationListPage() {
   const { data, isLoading, isError } = useOrganizations();
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<"name" | "slug">("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const organizations = data ?? [];
+  const sortedOrganizations = useMemo(() => [...organizations].sort((a, b) => {
+    const result = a[sortField].localeCompare(b[sortField]);
+    return sortDirection === "asc" ? result : -result;
+  }), [organizations, sortField, sortDirection]);
+  const changeSort = (field: "name" | "slug") => {
+    if (sortField === field) setSortDirection((value) => value === "asc" ? "desc" : "asc");
+    else { setSortField(field); setSortDirection("asc"); }
+    setPage(0);
+  };
   const [createOpen, setCreateOpen] = useState(false);
   const [editOrganization, setEditOrganization] = useState<Organization | null>(
     null,
@@ -38,6 +54,7 @@ export function OrganizationListPage() {
 
   return (
     <Stack spacing={3}>
+      <AppBreadcrumbs items={[{ label: "Organizations" }]} />
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
@@ -76,11 +93,15 @@ export function OrganizationListPage() {
         </Card>
       ) : (
         <OrganizationTable
-          organizations={data}
+          organizations={sortedOrganizations.slice(page * pageSize, (page + 1) * pageSize)}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={changeSort}
           onEdit={handleEdit}
           onDelete={handleDelete}
         />
       )}
+      {organizations.length > 25 && <DataTablePagination page={page} pageSize={pageSize} total={organizations.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(0); }} />}
       <OrganizationCreateDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}

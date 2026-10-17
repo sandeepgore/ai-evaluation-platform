@@ -4,6 +4,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dataset_version import DatasetVersion
+from app.models.dataset.dataset import Dataset
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
 from app.models.model import Model
 from app.schemas.evaluation import EvaluationRunCreate, EvaluationRunUpdate
@@ -202,6 +203,7 @@ class EvaluationRunService:
         db: AsyncSession,
         dataset_version_id: UUID | None = None,
         model_id: UUID | None = None,
+        project_id: UUID | None = None,
     ) -> list[EvaluationRun]:
         query = select(EvaluationRun).where(EvaluationRun.is_active.is_(True))
 
@@ -210,6 +212,16 @@ class EvaluationRunService:
 
         if model_id is not None:
             query = query.where(EvaluationRun.model_id == model_id)
+
+        if project_id is not None:
+            query = (
+                query.join(
+                    DatasetVersion,
+                    DatasetVersion.id == EvaluationRun.dataset_version_id,
+                )
+                .join(Dataset, Dataset.id == DatasetVersion.dataset_id)
+                .where(Dataset.project_id == project_id)
+            )
 
         query = query.order_by(EvaluationRun.created_at.desc())
 
@@ -255,6 +267,48 @@ class EvaluationRunService:
 
         run.is_active = False
         await db.commit()
+
+    @staticmethod
+    async def request_cancel(
+        db: AsyncSession,
+        run_id: UUID,
+    ) -> EvaluationRun | None:
+        # A pending run can be cancelled without starting a worker.
+        result = await db.execute(
+            update(EvaluationRun)
+            .where(
+                EvaluationRun.id == run_id,
+                EvaluationRun.is_active.is_(True),
+                EvaluationRun.status == EvaluationRunStatus.PENDING,
+            )
+            .values(
+                status=EvaluationRunStatus.CANCELLED,
+            )
+        )
+
+        if result.rowcount == 1:
+            await db.commit()
+            return await EvaluationRunService.get_by_id(db, run_id)
+
+        # A running worker will observe this flag at its next safe checkpoint.
+        result = await db.execute(
+            update(EvaluationRun)
+            .where(
+                EvaluationRun.id == run_id,
+                EvaluationRun.is_active.is_(True),
+                EvaluationRun.status == EvaluationRunStatus.RUNNING,
+            )
+            .values(
+                cancel_requested=True,
+            )
+        )
+
+        if result.rowcount == 1:
+            await db.commit()
+            return await EvaluationRunService.get_by_id(db, run_id)
+
+        await db.rollback()
+        return await EvaluationRunService.get_by_id(db, run_id)
 
     @staticmethod
     async def claim_pending(

@@ -1,14 +1,15 @@
 import {
-  ArrowBackOutlined,
   AssessmentOutlined,
+  DownloadOutlined,
+  ListAltOutlined,
   PlayCircleOutlined,
   RefreshOutlined,
+  StopCircleOutlined,
   TableChartOutlined,
 } from "@mui/icons-material";
 import {
   Alert,
   Box,
-  Breadcrumbs,
   Button,
   Chip,
   CircularProgress,
@@ -20,15 +21,23 @@ import {
   alpha,
   useTheme,
 } from "@mui/material";
-import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
+import { ConfirmDialog } from "../../components/common/ConfirmDialog";
+import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { downloadBlob } from "../../components/common/downloadBlob";
+import { useNotification } from "../../components/common/NotificationProvider";
 import { useDataset } from "../datasets/hooks";
 import { useDatasetVersion } from "../datasetVersions/hooks";
 import { useModel } from "../models/hooks";
+import { downloadEvaluationRunLogs } from "./api";
 import {
+  useCancelEvaluationRun,
   useEvaluationRun,
   useEvaluationRunStatus,
   useExecuteEvaluationRun,
+  useEvaluationRunLogsAvailability,
 } from "./hooks";
 
 const STATUS_CONFIG: Record<
@@ -86,6 +95,14 @@ export function EvaluationViewPage() {
   const navigate = useNavigate();
   const theme = useTheme();
 
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [waitingForQueue, setWaitingForQueue] = useState(false);
+  const [isDownloadingLogs, setIsDownloadingLogs] = useState(false);
+
+  // Prevent rapid duplicate clicks before React re-renders.
+  const executionSubmissionLock = useRef(false);
+
   const {
     data: run,
     isLoading: isRunLoading,
@@ -100,6 +117,9 @@ export function EvaluationViewPage() {
   } = useEvaluationRunStatus(evaluationId, Boolean(evaluationId));
 
   const executeMutation = useExecuteEvaluationRun();
+  const cancelMutation = useCancelEvaluationRun();
+  const { notify } = useNotification();
+  const { data: hasRunLogs } = useEvaluationRunLogsAvailability(run?.id);
 
   const { data: model, isLoading: isModelLoading } = useModel(
     run?.model_id ?? null,
@@ -141,6 +161,14 @@ export function EvaluationViewPage() {
   const isTerminal = ["completed", "failed", "cancelled"].includes(
     progressSource.status,
   );
+
+  // Clear the queue-waiting state once the server reports a status change.
+  useEffect(() => {
+    if (progressSource.status !== "pending") {
+      setWaitingForQueue(false);
+      executionSubmissionLock.current = false;
+    }
+  }, [progressSource.status]);
 
   const palette = theme.palette;
   const statusConfig = STATUS_CONFIG[progressSource.status] ?? {
@@ -190,15 +218,7 @@ export function EvaluationViewPage() {
   if (isError || !run) {
     return (
       <Stack spacing={2} sx={{ maxWidth: 600, mx: "auto", mt: 4 }}>
-        <Button
-          variant="text"
-          startIcon={<ArrowBackOutlined />}
-          onClick={() => navigate("/evaluations")}
-          sx={{ alignSelf: "flex-start", textTransform: "none" }}
-        >
-          Back to Evaluations
-        </Button>
-
+        <AppBreadcrumbs items={[{ label: "Evaluations", to: "/evaluations" }, { label: "Evaluation" }]} />
         <Alert severity="error">
           {error instanceof Error
             ? error.message
@@ -241,32 +261,19 @@ export function EvaluationViewPage() {
     },
   ];
 
+  const isSubmitting = executeMutation.isPending;
+  const isWaitingInQueue = waitingForQueue && isPending;
+  const isExecutionButtonDisabled =
+    isSubmitting ||
+    isWaitingInQueue ||
+    executionSubmissionLock.current ||
+    !evaluationId;
+
   return (
     <Stack spacing={3} sx={{ pb: 6 }}>
       {/* Header and Navigation */}
       <Stack spacing={1.5}>
-        <Breadcrumbs aria-label="breadcrumb">
-          <Typography
-            component={RouterLink}
-            to="/evaluations"
-            color="inherit"
-            variant="body2"
-            sx={{
-              textDecoration: "none",
-              "&:hover": { textDecoration: "underline" },
-            }}
-          >
-            Evaluations
-          </Typography>
-
-          <Typography
-            variant="body2"
-            color="text.primary"
-            sx={{ fontWeight: 500 }}
-          >
-            {run.name}
-          </Typography>
-        </Breadcrumbs>
+        <AppBreadcrumbs items={[{ label: "Evaluations", to: "/evaluations" }, { label: run.name }]} />
 
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -300,7 +307,9 @@ export function EvaluationViewPage() {
             }}
           >
             <Chip
-              label={statusConfig.label}
+              label={
+                cancelRequested && isActive ? "Stopping..." : statusConfig.label
+              }
               color={statusConfig.color}
               variant={
                 progressSource.status === "cancelled" ? "outlined" : "filled"
@@ -312,23 +321,89 @@ export function EvaluationViewPage() {
               }}
             />
 
+            <Tooltip
+              title={hasRunLogs
+                ? "Download the worker logs for this evaluation run. Logs are retained for three days."
+                : "No retained worker logs are available for this run."}
+            >
+              <span>
+                <Button
+                  variant="outlined"
+                  startIcon={isDownloadingLogs ? <CircularProgress size={16} /> : <DownloadOutlined />}
+                  disabled={!hasRunLogs || isDownloadingLogs}
+                  onClick={async () => {
+                    setIsDownloadingLogs(true);
+                    try {
+                      const archive = await downloadEvaluationRunLogs(run.id);
+                      downloadBlob(archive, `evaluation-run-${run.id}-logs.zip`);
+                    } catch (downloadError) {
+                      notify(
+                        downloadError instanceof Error
+                          ? downloadError.message
+                          : "Unable to download evaluation logs.",
+                        "error",
+                      );
+                    } finally {
+                      setIsDownloadingLogs(false);
+                    }
+                  }}
+                  sx={{ borderRadius: 2, textTransform: "none" }}
+                >
+                  {isDownloadingLogs ? "Preparing logs..." : "Download logs"}
+                </Button>
+              </span>
+            </Tooltip>
+
+            {datasetVersion && (
+              <Button
+                variant="outlined"
+                color="inherit"
+                startIcon={<ListAltOutlined />}
+                onClick={() =>
+                  navigate(
+                    `/datasets/${datasetVersion.dataset_id}/versions/${datasetVersion.id}/cases`,
+                  )
+                }
+                sx={{ borderRadius: 2, textTransform: "none" }}
+              >
+                View dataset cases
+              </Button>
+            )}
+
             {isPending && (
               <Button
                 variant="contained"
                 color="primary"
                 disableElevation
-                disabled={executeMutation.isPending || !evaluationId}
+                disabled={isExecutionButtonDisabled}
                 startIcon={
-                  executeMutation.isPending ? (
+                  isSubmitting || isWaitingInQueue ? (
                     <CircularProgress size={16} color="inherit" />
                   ) : (
                     <PlayCircleOutlined />
                   )
                 }
                 onClick={() => {
-                  if (evaluationId) {
-                    executeMutation.mutate(evaluationId);
+                  if (!evaluationId || executionSubmissionLock.current) {
+                    return;
                   }
+
+                  // Lock synchronously before starting the mutation.
+                  executionSubmissionLock.current = true;
+                  setWaitingForQueue(true);
+
+                  executeMutation.mutate(evaluationId, {
+                    onSuccess: () => {
+                      // Keep the lock while the server status is pending.
+                      // Refresh once so a fast status transition is detected.
+                      void refreshStatus();
+                    },
+                    onError: () => {
+                      // Submission failed, so allow a safe retry.
+                      executionSubmissionLock.current = false;
+                      setWaitingForQueue(false);
+                    },
+                  });
                 }}
                 sx={{
                   borderRadius: 2,
@@ -336,28 +411,58 @@ export function EvaluationViewPage() {
                   fontWeight: 600,
                 }}
               >
-                {executeMutation.isPending ? "Submitting..." : "Run Evaluation"}
+                {isSubmitting
+                  ? "Submitting..."
+                  : isWaitingInQueue
+                    ? "Waiting in Queue..."
+                    : "Run Evaluation"}
               </Button>
             )}
 
             {isActive && (
-              <Button
-                variant="outlined"
-                color="info"
-                size="small"
-                onClick={() => void refreshStatus()}
-                disabled={isRefreshing}
-                startIcon={
-                  isRefreshing ? (
-                    <CircularProgress size={14} color="inherit" />
-                  ) : (
-                    <RefreshOutlined fontSize="small" />
-                  )
-                }
-                sx={{ borderRadius: 2, textTransform: "none" }}
-              >
-                {isRefreshing ? "Syncing..." : "Refresh"}
-              </Button>
+              <>
+                <Button
+                  variant="outlined"
+                  color="info"
+                  size="small"
+                  onClick={() => void refreshStatus()}
+                  disabled={isRefreshing}
+                  startIcon={
+                    isRefreshing ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <RefreshOutlined fontSize="small" />
+                    )
+                  }
+                  sx={{ borderRadius: 2, textTransform: "none" }}
+                >
+                  {isRefreshing ? "Syncing..." : "Refresh"}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  onClick={() => setIsCancelDialogOpen(true)}
+                  disabled={
+                    cancelRequested || cancelMutation.isPending || !evaluationId
+                  }
+                  startIcon={
+                    cancelMutation.isPending ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <StopCircleOutlined fontSize="small" />
+                    )
+                  }
+                  sx={{ borderRadius: 2, textTransform: "none" }}
+                >
+                  {cancelRequested
+                    ? "Stopping..."
+                    : cancelMutation.isPending
+                      ? "Requesting..."
+                      : "Stop Evaluation"}
+                </Button>
+              </>
             )}
 
             {isTerminal && (
@@ -396,6 +501,22 @@ export function EvaluationViewPage() {
         </Stack>
       </Stack>
 
+      {/* Queue waiting status */}
+      {isWaitingInQueue && (
+        <Alert severity="info">
+          Evaluation submitted. Waiting for the worker to pick it up. This
+          button will remain disabled until the evaluation status changes.
+        </Alert>
+      )}
+
+      {/* Cancellation status */}
+      {cancelRequested && isActive && (
+        <Alert severity="info">
+          Cancellation has been requested. The current case or batch may finish
+          before the evaluation stops.
+        </Alert>
+      )}
+
       {/* Execution Progress */}
       <Paper
         variant="outlined"
@@ -425,7 +546,9 @@ export function EvaluationViewPage() {
 
               <Typography variant="body2" color="text.secondary">
                 {isPending
-                  ? "Not started. Submit this evaluation when you're ready."
+                  ? isWaitingInQueue
+                    ? "Evaluation submitted and waiting for execution."
+                    : "Not started. Submit this evaluation when you're ready."
                   : `${progressSource.processed_cases} of ${progressSource.total_cases} test cases evaluated.`}
               </Typography>
             </Box>
@@ -673,6 +796,26 @@ export function EvaluationViewPage() {
           ))}
         </Box>
       </Paper>
+
+      <ConfirmDialog
+        open={isCancelDialogOpen}
+        title="Stop Evaluation?"
+        message="This requests a graceful stop. The current case or batch may finish before the evaluation is marked cancelled. This action cannot be undone."
+        confirmLabel="Stop Evaluation"
+        cancelLabel="Keep Running"
+        loading={cancelMutation.isPending}
+        onCancel={() => setIsCancelDialogOpen(false)}
+        onConfirm={() => {
+          if (!evaluationId) return;
+
+          cancelMutation.mutate(evaluationId, {
+            onSuccess: () => {
+              setCancelRequested(true);
+              setIsCancelDialogOpen(false);
+            },
+          });
+        }}
+      />
     </Stack>
   );
 }

@@ -42,12 +42,13 @@ async def create_experiment(
 )
 async def list_experiments(
     scope: str = Query(default="recent"),
+    project_id: UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[ExperimentResponse]:
     service = ExperimentService(db)
 
     try:
-        experiments = await service.list(scope=scope)
+        experiments = await service.list(scope=scope, project_id=project_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -129,6 +130,28 @@ async def create_experiment_snapshot(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.get(
+    "/{experiment_id}/snapshots",
+    response_model=list[ExperimentSnapshotResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def list_experiment_snapshots(
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[ExperimentSnapshotResponse]:
+    service = ExperimentService(db)
+
+    experiment = await service.get_by_id(experiment_id)
+
+    if experiment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found",
+        )
+
+    return await service.list_snapshots(experiment_id)
 
 
 @router.get(

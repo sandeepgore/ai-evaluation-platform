@@ -1,4 +1,47 @@
+import axios from "axios";
 import { apiClient } from "../../services/api/client";
+
+async function downloadLogArchive(path: string): Promise<Blob> {
+  try {
+    const response = await apiClient.get<Blob>(path, { responseType: "blob" });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+      let body: { detail?: unknown } | null = null;
+      try {
+        body = JSON.parse(await error.response.data.text()) as { detail?: unknown };
+      } catch {
+        body = null;
+      }
+      if (typeof body?.detail === "string") throw new Error(body.detail);
+    }
+    throw error;
+  }
+}
+
+export function downloadEvaluationRunLogs(runId: string): Promise<Blob> {
+  return downloadLogArchive(`/api/v1/evaluation-runs/${runId}/logs`);
+}
+
+export function downloadSchedulerLogs(): Promise<Blob> {
+  return downloadLogArchive("/api/v1/evaluation-scheduler/logs");
+}
+
+export async function getEvaluationRunLogsAvailability(
+  runId: string,
+): Promise<boolean> {
+  const response = await apiClient.get<{ available: boolean }>(
+    `/api/v1/evaluation-runs/${runId}/logs/availability`,
+  );
+  return response.data.available;
+}
+
+export async function getSchedulerLogsAvailability(): Promise<boolean> {
+  const response = await apiClient.get<{ available: boolean }>(
+    "/api/v1/evaluation-scheduler/logs/availability",
+  );
+  return response.data.available;
+}
 
 export type EvaluationRunStatus =
   | "pending"
@@ -14,6 +57,27 @@ export type EvaluationType =
   | "rag"
   | "conversation"
   | "safety";
+
+export interface EvaluatorMetadata {
+  name: string;
+  category: string;
+  description: string;
+  required_inputs: string[];
+  requires_reference: boolean;
+  requires_context: boolean;
+  requires_llm: boolean;
+  applicable_to: string[];
+  tags: string[];
+}
+
+export async function listEvaluators(): Promise<EvaluatorMetadata[]> {
+  const response = await apiClient.get<{
+    evaluators: EvaluatorMetadata[];
+    total: number;
+  }>("/api/v1/evaluators");
+
+  return response.data.evaluators;
+}
 
 export interface EvaluationRun {
   id: string;
@@ -45,6 +109,63 @@ export interface CreateEvaluationRunPayload {
   configuration?: Record<string, unknown> | null;
 }
 
+export interface CreateEvaluationSchedulePayload extends CreateEvaluationRunPayload {
+  schedule_type: "one_time" | "recurring";
+  schedule_expression?: string | null;
+  timezone: string;
+  next_run_at?: string | null;
+}
+
+export interface EvaluationSchedule {
+  id: string;
+  dataset_version_id: string;
+  model_id: string;
+  name: string;
+  evaluation_type: EvaluationType;
+  mode: EvaluationRunMode;
+  configuration: Record<string, unknown> | null;
+  schedule_type: "one_time" | "recurring";
+  schedule_expression: string | null;
+  timezone: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createEvaluationSchedule(
+  payload: CreateEvaluationSchedulePayload,
+): Promise<EvaluationSchedule> {
+  const response = await apiClient.post<EvaluationSchedule>(
+    "/api/v1/evaluation-schedules",
+    payload,
+  );
+  return response.data;
+}
+
+export async function listEvaluationSchedules(): Promise<EvaluationSchedule[]> {
+  const response = await apiClient.get<EvaluationSchedule[]>(
+    "/api/v1/evaluation-schedules",
+  );
+  return response.data;
+}
+
+export async function updateEvaluationSchedule(
+  scheduleId: string,
+  payload: Partial<Pick<EvaluationSchedule, "name" | "mode" | "configuration" | "schedule_expression" | "timezone" | "is_active">>,
+): Promise<EvaluationSchedule> {
+  const response = await apiClient.patch<EvaluationSchedule>(
+    `/api/v1/evaluation-schedules/${scheduleId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteEvaluationSchedule(scheduleId: string): Promise<void> {
+  await apiClient.delete(`/api/v1/evaluation-schedules/${scheduleId}`);
+}
+
 export async function createEvaluationRun(
   payload: CreateEvaluationRunPayload,
 ): Promise<EvaluationRun> {
@@ -67,6 +188,7 @@ export async function executeEvaluationRun(
 export async function listEvaluationRuns(params?: {
   datasetVersionId?: string;
   modelId?: string;
+  projectId?: string;
 }): Promise<EvaluationRun[]> {
   const response = await apiClient.get<EvaluationRun[]>(
     "/api/v1/evaluation-runs",
@@ -74,6 +196,7 @@ export async function listEvaluationRuns(params?: {
       params: {
         dataset_version_id: params?.datasetVersionId,
         model_id: params?.modelId,
+        project_id: params?.projectId,
       },
     },
   );
@@ -221,6 +344,7 @@ export interface EvaluationResultStatistics {
   completed: number;
   failed: number;
   pending: number;
+  not_applicable: number;
 }
 
 export interface ListEvaluationResultsParams {
@@ -263,6 +387,16 @@ export async function getEvaluationResultStatistics(
 ): Promise<EvaluationResultStatistics> {
   const response = await apiClient.get<EvaluationResultStatistics>(
     `/api/v1/evaluation-results/run/${evaluationRunId}/statistics`,
+  );
+
+  return response.data;
+}
+
+export async function cancelEvaluationRun(
+  evaluationId: string,
+): Promise<EvaluationRun> {
+  const response = await apiClient.post<EvaluationRun>(
+    `/api/v1/evaluation-runs/${evaluationId}/cancel`,
   );
 
   return response.data;

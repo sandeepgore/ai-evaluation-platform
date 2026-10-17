@@ -720,3 +720,125 @@ def test_get_evaluation_run_summary_works_when_redis_get_fails():
 
     finally:
         app.dependency_overrides.pop(get_redis, None)
+
+
+def test_cancel_evaluation_run():
+    run = create_fake_run()
+    run.status = EvaluationRunStatus.CANCELLED
+
+    with patch(
+        "app.api.v1.evaluation.evaluation.EvaluationRunService.request_cancel",
+        new=AsyncMock(return_value=run),
+    ) as cancel_mock:
+        response = client.post(f"/api/v1/evaluation-runs/{run.id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(run.id)
+    assert response.json()["status"] == EvaluationRunStatus.CANCELLED.value
+
+    cancel_mock.assert_awaited_once()
+
+
+def test_cancel_evaluation_run_returns_404_when_missing():
+    run_id = uuid4()
+
+    with patch(
+        "app.api.v1.evaluation.evaluation.EvaluationRunService.request_cancel",
+        new=AsyncMock(return_value=None),
+    ) as cancel_mock:
+        response = client.post(f"/api/v1/evaluation-runs/{run_id}/cancel")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Evaluation run not found"
+
+    cancel_mock.assert_awaited_once()
+
+
+def test_cancel_terminal_evaluation_run_preserves_status():
+    run = create_fake_run()
+    run.status = EvaluationRunStatus.COMPLETED
+
+    with patch(
+        "app.api.v1.evaluation.evaluation.EvaluationRunService.request_cancel",
+        new=AsyncMock(return_value=run),
+    ):
+        response = client.post(f"/api/v1/evaluation-runs/{run.id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == EvaluationRunStatus.COMPLETED.value
+
+
+def test_get_evaluation_run_summary_allows_missing_overall_score():
+    run_id = uuid4()
+
+    summary = {
+        "overall_score": None,
+        "metrics": {},
+        "feedback": {
+            "overall": "No overall score is available for this evaluation.",
+            "strengths": [
+                "Evaluation processing completed.",
+                "The results were recorded.",
+                "The summary was generated successfully.",
+            ],
+            "weaknesses": [
+                "No numeric overall score is available.",
+                "Some metrics may not be applicable.",
+                "There is insufficient scored data for an aggregate score.",
+            ],
+            "patterns": [
+                "The evaluation contains no aggregatable overall score.",
+                "Some cases may be not applicable.",
+                "The summary preserves the absence of a numeric score.",
+            ],
+            "recommendations": [
+                "Review the applicable evaluation metrics.",
+                "Check the evaluated cases and their eligibility.",
+                "Run an applicable evaluation if a numeric score is needed.",
+            ],
+            "evaluator_feedback": [],
+        },
+        "total_results": 0,
+        "completed_cases": 0,
+        "failed_cases": 0,
+        "not_applicable_cases": 0,
+        "performance": {
+            "duration_ms": 0,
+            "total_model_latency_ms": 0,
+            "avg_model_latency_ms": None,
+            "min_model_latency_ms": None,
+            "p50_model_latency_ms": None,
+            "p95_model_latency_ms": None,
+            "p99_model_latency_ms": None,
+            "max_model_latency_ms": None,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "throughput_cases_per_second": None,
+            "total_results": 0,
+            "completed_cases": 0,
+            "failed_cases": 0,
+            "not_applicable_cases": 0,
+            "cost": {
+                "input_cost": 0.0,
+                "output_cost": 0.0,
+                "total_cost": 0.0,
+                "currency": "USD",
+            },
+        },
+    }
+
+    with (
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationSummaryPersistenceService.get",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.api.v1.evaluation.evaluation.EvaluationRunSummaryService.calculate",
+            new=AsyncMock(return_value=summary),
+        ),
+    ):
+        response = client.get(f"/api/v1/evaluation-runs/{run_id}/summary")
+
+    assert response.status_code == 200
+    assert response.json()["overall_score"] is None

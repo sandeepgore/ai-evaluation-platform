@@ -24,6 +24,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import StorageOutlinedIcon from "@mui/icons-material/StorageOutlined";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
+import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 
 import { DatasetVersionStatusChip } from "./DatasetVersionStatusChip";
 import type { DatasetVersion } from "./api";
@@ -35,6 +36,9 @@ interface DatasetVersionTableProps {
   onFinalize: (version: DatasetVersion) => void;
   onViewCases: (version: DatasetVersion) => void;
   onView: (version: DatasetVersion) => void;
+  sortField?: "version" | "status" | "case_count";
+  sortDirection?: SortDirection;
+  onSort?: (field: "version" | "status" | "case_count") => void;
 }
 
 export function DatasetVersionTable({
@@ -44,6 +48,9 @@ export function DatasetVersionTable({
   onFinalize,
   onViewCases,
   onView,
+  sortField = "version",
+  sortDirection = "desc",
+  onSort = () => undefined,
 }: DatasetVersionTableProps) {
   const theme = useTheme();
 
@@ -76,7 +83,7 @@ export function DatasetVersionTable({
                 py: 1.5,
               }}
             >
-              VERSION
+              <DataTableSortLabel field="version" activeField={sortField} direction={sortDirection} label="VERSION" onSort={onSort} />
             </TableCell>
             <TableCell
               sx={{
@@ -86,7 +93,7 @@ export function DatasetVersionTable({
                 py: 1.5,
               }}
             >
-              STATUS
+              <DataTableSortLabel field="status" activeField={sortField} direction={sortDirection} label="STATUS" onSort={onSort} />
             </TableCell>
             <TableCell
               sx={{
@@ -106,7 +113,7 @@ export function DatasetVersionTable({
                 py: 1.5,
               }}
             >
-              CASES
+              <DataTableSortLabel field="case_count" activeField={sortField} direction={sortDirection} label="CASES" onSort={onSort} />
             </TableCell>
             <TableCell
               sx={{

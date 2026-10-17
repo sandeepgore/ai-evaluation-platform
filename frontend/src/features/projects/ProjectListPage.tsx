@@ -6,7 +6,9 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
@@ -26,6 +28,20 @@ export function ProjectListPage() {
   const { data, isLoading, isError } = useProjects(
     selectedOrganizationId,
   );
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<"name" | "slug">("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const projects = data ?? [];
+  const sortedProjects = useMemo(() => [...projects].sort((a, b) => {
+    const result = a[sortField].localeCompare(b[sortField]);
+    return sortDirection === "asc" ? result : -result;
+  }), [projects, sortField, sortDirection]);
+  const changeSort = (field: "name" | "slug") => {
+    if (sortField === field) setSortDirection((value) => value === "asc" ? "desc" : "asc");
+    else { setSortField(field); setSortDirection("asc"); }
+    setPage(0);
+  };
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
@@ -76,6 +92,7 @@ export function ProjectListPage() {
 
   return (
     <Stack spacing={3}>
+      <AppBreadcrumbs items={[{ label: "Projects" }]} />
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
@@ -114,11 +131,15 @@ export function ProjectListPage() {
         </Card>
       ) : (
         <ProjectTable
-          projects={data}
+          projects={sortedProjects.slice(page * pageSize, (page + 1) * pageSize)}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={changeSort}
           onEdit={handleEdit}
           onDelete={handleDelete}
         />
       )}
+      {projects.length > 25 && <DataTablePagination page={page} pageSize={pageSize} total={projects.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(0); }} />}
 
       <ProjectCreateDialog
         open={createOpen}
