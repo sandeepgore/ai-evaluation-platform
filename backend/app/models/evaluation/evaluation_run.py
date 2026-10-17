@@ -107,6 +107,12 @@ class EvaluationRun(TimestampMixin, Base):
         default=0,
     )
 
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

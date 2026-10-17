@@ -132,6 +132,7 @@ async def test_engine_handles_batch_inference_failure_and_continues(
 
     result.scalar_one_or_none.return_value = model
     result.scalars.return_value.all.return_value = []
+    result.rowcount = 1
 
     db.execute = AsyncMock(
         return_value=result,
@@ -139,6 +140,13 @@ async def test_engine_handles_batch_inference_failure_and_continues(
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
+
+    result.rowcount = 1
+    result.one_or_none.return_value = (
+        EvaluationRunStatus.RUNNING,
+        False,
+    )
 
     model_gateway = MagicMock()
     model_gateway.generate = AsyncMock()
@@ -342,6 +350,7 @@ async def test_engine_isolates_individual_batch_item_failure(
 
     result.scalar_one_or_none.return_value = model
     result.scalars.return_value.all.return_value = []
+    result.rowcount = 1
 
     db.execute = AsyncMock(
         return_value=result,
@@ -349,6 +358,12 @@ async def test_engine_isolates_individual_batch_item_failure(
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
+
+    result.one_or_none.return_value = (
+        EvaluationRunStatus.RUNNING,
+        False,
+    )
 
     successful_response = ModelResponse(
         output="Answer",

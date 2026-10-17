@@ -1,4 +1,3 @@
-import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import {
   Alert,
@@ -10,7 +9,7 @@ import {
 } from "@mui/material";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import EvaluationResultsFilters, {
   EvaluationResultStatusFilter,
 } from "./results/EvaluationResultsFilters";
@@ -23,6 +22,7 @@ import {
 import EvaluationResultsStats from "./results/EvaluationResultsStats";
 import EvaluationResultsTable from "./results/EvaluationResultsTable";
 import EvaluationResultDetailsDrawer from "./results/EvaluationResultDetailsDrawer";
+import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
 
 // import {
 //   getEvaluationResultStatistics,
@@ -42,17 +42,18 @@ import EvaluationResultDetailsDrawer from "./results/EvaluationResultDetailsDraw
 
 // import type { EvaluationResultStatusFilter } from "../../components/evaluations/results";
 
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 25;
 
 export default function EvaluationResultsPage() {
   const { evaluationId } = useParams<{ evaluationId: string }>();
-  const navigate = useNavigate();
 
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<EvaluationResultStatusFilter>("all");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [sortField, setSortField] = useState<"status" | "created_at" | "latency_ms">("created_at");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedResult, setSelectedResult] = useState<EvaluationResult | null>(
     null,
   );
@@ -103,6 +104,20 @@ export default function EvaluationResultsPage() {
     );
   }, [results, searchText]);
 
+  const sortedResults = useMemo(() => [...filteredResults].sort((a, b) => {
+    const comparison = sortField === "status"
+      ? a.status.localeCompare(b.status)
+      : sortField === "created_at"
+        ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        : (a.latency_ms ?? -1) - (b.latency_ms ?? -1);
+    return sortDirection === "asc" ? comparison : -comparison;
+  }), [filteredResults, sortField, sortDirection]);
+
+  const handleSort = (field: "status" | "created_at" | "latency_ms") => {
+    if (sortField === field) setSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+    else { setSortField(field); setSortDirection("asc"); }
+  };
+
   const handleStatusChange = (value: EvaluationResultStatusFilter) => {
     setStatusFilter(value);
     setPage(0);
@@ -130,6 +145,7 @@ export default function EvaluationResultsPage() {
   return (
     <Box sx={{ width: "100%", minWidth: 0 }}>
       <Stack spacing={3}>
+        <AppBreadcrumbs items={[{ label: "Evaluations", to: "/evaluations" }, { label: "Evaluation", to: `/evaluations/${evaluationId}` }, { label: "Results" }]} />
         <Stack
           direction={{ xs: "column", sm: "row" }}
           sx={{
@@ -139,14 +155,6 @@ export default function EvaluationResultsPage() {
           }}
         >
           <Box sx={{ minWidth: 0 }}>
-            <Button
-              startIcon={<ArrowBackOutlined />}
-              onClick={() => navigate(`/evaluations/${evaluationId}`)}
-              sx={{ mb: 1 }}
-            >
-              Back to evaluation
-            </Button>
-
             <Typography variant="h5" sx={{ fontWeight: 700 }}>
               Evaluation results
             </Typography>
@@ -241,7 +249,7 @@ export default function EvaluationResultsPage() {
           </Stack>
         ) : (
           <EvaluationResultsTable
-            results={filteredResults}
+            results={sortedResults}
             total={total}
             page={page}
             pageSize={pageSize}
@@ -249,6 +257,9 @@ export default function EvaluationResultsPage() {
             onPageChange={setPage}
             onPageSizeChange={handlePageSizeChange}
             onInspect={setSelectedResult}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSort={handleSort}
           />
         )}
 

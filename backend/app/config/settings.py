@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from app.shared.enums import DataPolicy
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,10 +36,10 @@ class Settings(BaseSettings):
     evaluation_queue_group: str = "evaluation-workers"
     evaluation_queue_claim_timeout_seconds: int = 300
 
-    evaluation_log_directory: str = "logs"
+    evaluation_log_directory: str = str(Path(__file__).resolve().parents[2] / "logs")
     evaluation_log_retention_days: int = 3
 
-    scheduler_poll_interval_seconds: int = 3600
+    scheduler_poll_interval_seconds: int = 30
 
     # ------------------------------------------------------------------
     # Evaluation defaults

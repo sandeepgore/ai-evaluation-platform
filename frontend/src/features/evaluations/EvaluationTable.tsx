@@ -1,8 +1,8 @@
 import { VisibilityOutlined } from "@mui/icons-material";
 import {
   Box,
+  Button,
   Chip,
-  IconButton,
   LinearProgress,
   Paper,
   Stack,
@@ -188,7 +188,7 @@ export function EvaluationTable({
               {renderSortLabel("created_at", "Created")}
             </TableCell>
 
-            <TableCell align="right" sx={{ width: 80 }}>
+            <TableCell align="right" sx={{ width: 110, minWidth: 110 }}>
               Actions
             </TableCell>
           </TableRow>
@@ -436,8 +436,8 @@ export function EvaluationTable({
                 <TableCell
                   align="right"
                   sx={{
-                    width: 80,
-                    minWidth: 80,
+                  width: 110,
+                  minWidth: 110,
                     p: 1,
                     position: "sticky",
                     right: 0,
@@ -448,22 +448,23 @@ export function EvaluationTable({
                   }}
                 >
                   <Tooltip title="View evaluation details">
-                    <IconButton
+                    <Button
                       aria-label={`View ${run.name}`}
                       onClick={() => onView(run)}
                       size="small"
                       color="primary"
+                      variant="text"
+                      startIcon={<VisibilityOutlined fontSize="small" />}
                       sx={{
                         display: "inline-flex",
                         visibility: "visible",
                         opacity: 1,
+                        minWidth: 0,
+                        textTransform: "none",
                       }}
                     >
-                      <VisibilityOutlined
-                        fontSize="small"
-                        sx={{ display: "block", visibility: "visible" }}
-                      />
-                    </IconButton>
+                      View
+                    </Button>
                   </Tooltip>
                 </TableCell>
               </TableRow>

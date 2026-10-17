@@ -1,3 +1,4 @@
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
@@ -13,9 +14,58 @@ import { EvaluationViewPage } from "../features/evaluations/EvaluationViewPage";
 import { CreateEvaluationPage } from "../features/evaluations/CreateEvaluationPage";
 import { EvaluationSummaryPage } from "../features/evaluations/EvaluationSummaryPage";
 import EvaluationResultsPage from "../features/evaluations/EvaluationResultsPage";
+import { ErrorState } from "../components/common/ErrorState";
+import { LoadingState } from "../components/common/LoadingState";
 
-function PlaceholderPage({ title }: { title: string }) {
-  return <h1>{title}</h1>;
+const ExperimentListPage = lazy(() =>
+  import("../features/experiments/ExperimentListPage").then((module) => ({
+    default: module.ExperimentListPage,
+  })),
+);
+const ExperimentDetailPage = lazy(() =>
+  import("../features/experiments/ExperimentDetailPage").then((module) => ({
+    default: module.ExperimentDetailPage,
+  })),
+);
+
+function ExperimentsRoute({ page }: { page: "list" | "detail" }) {
+  const Page = page === "list" ? ExperimentListPage : ExperimentDetailPage;
+  return (
+    <ExperimentsErrorBoundary>
+      <Suspense fallback={<LoadingState message="Loading experiments..." />}>
+        <Page />
+      </Suspense>
+    </ExperimentsErrorBoundary>
+  );
+}
+
+class ExperimentsErrorBoundary extends Component<
+  { children: ReactNode },
+  { errorMessage: string | null }
+> {
+  state: { errorMessage: string | null } = { errorMessage: null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  componentDidCatch(error: Error, _info: ErrorInfo) {
+    console.error("Experiments page failed to render.", error);
+  }
+
+  render() {
+    if (this.state.errorMessage !== null) {
+      return (
+        <ErrorState
+          title="Experiments page could not be displayed"
+          message={`Experiments route error: ${this.state.errorMessage}`}
+        />
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function AppRoutes() {
@@ -55,7 +105,11 @@ export function AppRoutes() {
         />
         <Route
           path="/experiments"
-          element={<PlaceholderPage title="Experiments" />}
+          element={<ExperimentsRoute page="list" />}
+        />
+        <Route
+          path="/experiments/:experimentId"
+          element={<ExperimentsRoute page="detail" />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

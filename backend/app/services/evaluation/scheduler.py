@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.settings import settings
 from app.db.session import AsyncSessionLocal
 from app.models.evaluation import EvaluationSchedule, EvaluationScheduleType
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.schemas.evaluation import EvaluationRunCreate
 from app.services.evaluation.evaluation import EvaluationRunService
 from app.services.evaluation.schedule import EvaluationScheduleService
@@ -288,11 +289,17 @@ class EvaluationScheduler:
         """
         Convert schedule configuration into an evaluation-run request.
         """
+        try:
+            mode = EvaluationRunMode(schedule.mode)
+        except (AttributeError, TypeError, ValueError):
+            mode = EvaluationRunMode.DEFAULT
+
         return EvaluationRunCreate(
             dataset_version_id=schedule.dataset_version_id,
             model_id=schedule.model_id,
             name=schedule.name,
             evaluation_type=schedule.evaluation_type,
+            mode=mode,
             configuration=schedule.configuration,
         )
 

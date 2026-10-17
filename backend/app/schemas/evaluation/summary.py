@@ -33,17 +33,17 @@ class EvaluationRunFinalFeedbackResponse(BaseModel):
     """
     Final qualitative feedback persisted with the evaluation summary.
 
-    The final summary must contain at least three evidence-grounded
-    items in each qualitative section.
+    The final summary contains evidence-grounded qualitative sections.
+    Strengths may be empty when the run has no successful evidence.
     """
 
     overall: str = Field(
         min_length=1,
     )
 
-    strengths: list[str] = Field(
-        min_length=3,
-    )
+    # A run with no successful cases has no evidence from which to claim
+    # strengths. Empty is valid; other sections still explain the outcome.
+    strengths: list[str] = Field(default_factory=list)
 
     weaknesses: list[str] = Field(
         min_length=3,
@@ -98,7 +98,8 @@ class EvaluationRunPerformanceResponse(BaseModel):
 class EvaluationRunSummaryResponse(BaseModel):
     model: EvaluationRunModelResponse | None = None
 
-    overall_score: float = Field(
+    overall_score: float | None = Field(
+        default=None,
         ge=0.0,
         le=1.0,
     )

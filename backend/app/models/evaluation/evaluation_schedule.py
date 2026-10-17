@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.base import TimestampMixin
+from app.models.evaluation.evaluation_run import EvaluationRunMode
 from app.models.evaluation.evaluation_type import EvaluationType
 
 
@@ -54,6 +55,12 @@ class EvaluationSchedule(TimestampMixin, Base):
             values_callable=lambda enum_class: [item.value for item in enum_class],
         ),
         nullable=False,
+    )
+
+    mode: Mapped[EvaluationRunMode] = mapped_column(
+        String(20),
+        nullable=False,
+        default=EvaluationRunMode.DEFAULT,
     )
 
     configuration: Mapped[dict[str, Any] | None] = mapped_column(

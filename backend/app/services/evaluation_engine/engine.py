@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation import EvaluationRun, EvaluationRunStatus
@@ -131,6 +131,30 @@ class EvaluationEngine:
         self.run_validation_service = EvaluationRunValidationService(
             evaluator_registry,
         )
+
+    async def _is_cancel_requested(
+        self,
+        run_id: UUID,
+    ) -> bool:
+        """Return whether cancellation has been requested for this run."""
+        result = await self.db.execute(
+            select(
+                EvaluationRun.status,
+                EvaluationRun.cancel_requested,
+            ).where(
+                EvaluationRun.id == run_id,
+                EvaluationRun.is_active.is_(True),
+            )
+        )
+
+        state = result.one_or_none()
+
+        if state is None:
+            return False
+
+        run_status, cancel_requested = state
+
+        return run_status == EvaluationRunStatus.CANCELLED or cancel_requested
 
     # ------------------------------------------------------------------
     # Configuration
@@ -1163,27 +1187,26 @@ class EvaluationEngine:
                         eligibility=eligibility,
                         retry=retry,
                     )
-                    continue
+                else:
+                    prompt = self._resolve_case_prompt(
+                        prompt_config=prompt_config,
+                        case=case,
+                    )
 
-                prompt = self._resolve_case_prompt(
-                    prompt_config=prompt_config,
-                    case=case,
-                )
+                    response = await model_gateway.generate(
+                        prompt=prompt,
+                        configuration=configuration,
+                    )
 
-                response = await model_gateway.generate(
-                    prompt=prompt,
-                    configuration=configuration,
-                )
-
-                await self._evaluate_case(
-                    run=run,
-                    case=case,
-                    response=response,
-                    evaluator_configs=evaluator_configs,
-                    scoring_configuration=scoring_configuration,
-                    eligibility=eligibility,
-                    retry=retry,
-                )
+                    await self._evaluate_case(
+                        run=run,
+                        case=case,
+                        response=response,
+                        evaluator_configs=evaluator_configs,
+                        scoring_configuration=scoring_configuration,
+                        eligibility=eligibility,
+                        retry=retry,
+                    )
 
             except Exception as exc:
                 await self._save_failed_case(
@@ -1193,7 +1216,12 @@ class EvaluationEngine:
                     retry=retry,
                 )
 
-        await self.db.commit()
+            # Persist the current case and its counter changes before
+            # observing cancellation or starting another case.
+            await self.db.commit()
+
+            if await self._is_cancel_requested(run.id):
+                return
 
     # ------------------------------------------------------------------
     # Batch execution
@@ -1239,9 +1267,7 @@ class EvaluationEngine:
                         evaluator_configs=evaluator_configs,
                     )
 
-                    if not self._has_applicable_evaluator(
-                        eligibility,
-                    ):
+                    if not self._has_applicable_evaluator(eligibility):
                         await self._save_not_applicable_case(
                             run=run,
                             case=case,
@@ -1249,7 +1275,6 @@ class EvaluationEngine:
                             eligibility=eligibility,
                             retry=retry,
                         )
-
                         continue
 
                     eligible_cases.append(
@@ -1270,6 +1295,10 @@ class EvaluationEngine:
             if not eligible_cases:
                 await self.db.commit()
                 await self.db.refresh(run)
+
+                if await self._is_cancel_requested(run.id):
+                    return
+
                 continue
 
             prompts: list[str] = []
@@ -1306,6 +1335,10 @@ class EvaluationEngine:
             if not prompts:
                 await self.db.commit()
                 await self.db.refresh(run)
+
+                if await self._is_cancel_requested(run.id):
+                    return
+
                 continue
 
             try:
@@ -1326,12 +1359,12 @@ class EvaluationEngine:
                 await self.db.commit()
                 await self.db.refresh(run)
 
+                if await self._is_cancel_requested(run.id):
+                    return
+
                 continue
 
-            if not isinstance(
-                batch_results,
-                list,
-            ):
+            if not isinstance(batch_results, list):
                 batch_exc = RuntimeError("Model gateway returned an invalid batch response.")
 
                 for case, _eligibility in prompt_cases:
@@ -1345,11 +1378,12 @@ class EvaluationEngine:
                 await self.db.commit()
                 await self.db.refresh(run)
 
+                if await self._is_cancel_requested(run.id):
+                    return
+
                 continue
 
-            if len(batch_results) != len(
-                prompt_cases,
-            ):
+            if len(batch_results) != len(prompt_cases):
                 batch_exc = RuntimeError(
                     "Model gateway returned an unexpected number of responses."
                 )
@@ -1364,6 +1398,9 @@ class EvaluationEngine:
 
                 await self.db.commit()
                 await self.db.refresh(run)
+
+                if await self._is_cancel_requested(run.id):
+                    return
 
                 continue
 
@@ -1427,6 +1464,9 @@ class EvaluationEngine:
             await self.db.commit()
             await self.db.refresh(run)
 
+            if await self._is_cancel_requested(run.id):
+                return
+
     # ------------------------------------------------------------------
     # Main execution
     # ------------------------------------------------------------------
@@ -1441,7 +1481,7 @@ class EvaluationEngine:
         """Execute an evaluation run.
 
         Normal execution:
-            PENDING -> RUNNING -> COMPLETED/FAILED
+            PENDING -> RUNNING -> COMPLETED/FAILED/CANCELLED
 
         Retry/recovery:
             Existing RUNNING run resumes only pending/failed cases.
@@ -1482,17 +1522,10 @@ class EvaluationEngine:
                 detail="Evaluation run has been cancelled.",
             )
 
-        self._validate_llm_available_configuration(
-            run,
-        )
+        self._validate_llm_available_configuration(run)
 
-        execution_mode = self._get_execution_mode(
-            run,
-        )
-
-        batch_size = self._get_batch_size(
-            run,
-        )
+        execution_mode = self._get_execution_mode(run)
+        batch_size = self._get_batch_size(run)
 
         model_result = await self.db.execute(
             select(Model).where(
@@ -1500,7 +1533,6 @@ class EvaluationEngine:
                 Model.is_active.is_(True),
             )
         )
-
         model = model_result.scalar_one_or_none()
 
         if model is None:
@@ -1513,18 +1545,14 @@ class EvaluationEngine:
 
         if model_gateway is None:
             try:
-                model_gateway = ModelGatewayFactory.create(
-                    model,
-                )
+                model_gateway = ModelGatewayFactory.create(model)
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=str(exc),
                 ) from exc
 
-        judge_model_resolution = await self._resolve_judge_model_gateway(
-            run,
-        )
+        judge_model_resolution = await self._resolve_judge_model_gateway(run)
 
         judge_model_gateway = None
         judge_model_configuration: dict[str, Any] = {}
@@ -1539,14 +1567,9 @@ class EvaluationEngine:
 
         if judge_model_gateway is not None:
             try:
-                existing_judge = self.evaluator_registry.get(
-                    "llm_judge",
-                )
+                existing_judge = self.evaluator_registry.get("llm_judge")
 
-                if isinstance(
-                    existing_judge,
-                    LLMJudgeEvaluator,
-                ):
+                if isinstance(existing_judge, LLMJudgeEvaluator):
                     existing_judge.set_model_gateway(
                         judge_model_gateway,
                         judge_model_configuration,
@@ -1555,32 +1578,28 @@ class EvaluationEngine:
                     self.evaluator_registry.register(
                         LLMJudgeEvaluator(
                             model_gateway=judge_model_gateway,
-                            model_configuration=(judge_model_configuration),
+                            model_configuration=judge_model_configuration,
                         )
                     )
 
-            except (
-                ValueError,
-                KeyError,
-            ):
+            except (ValueError, KeyError):
                 try:
                     self.evaluator_registry.register(
                         LLMJudgeEvaluator(
                             model_gateway=judge_model_gateway,
-                            model_configuration=(judge_model_configuration),
+                            model_configuration=judge_model_configuration,
                         )
                     )
-
                 except Exception as exc:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=(f"Failed to register LLM judge evaluator: {exc}"),
+                        detail=f"Failed to register LLM judge evaluator: {exc}",
                     ) from exc
 
             except Exception as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(f"Failed to configure LLM judge evaluator: {exc}"),
+                    detail=f"Failed to configure LLM judge evaluator: {exc}",
                 ) from exc
 
         if (
@@ -1591,13 +1610,8 @@ class EvaluationEngine:
         ):
             judge_provider = (
                 resolved_judge_model.provider.value
-                if hasattr(
-                    resolved_judge_model.provider,
-                    "value",
-                )
-                else str(
-                    resolved_judge_model.provider,
-                )
+                if hasattr(resolved_judge_model.provider, "value")
+                else str(resolved_judge_model.provider)
             )
 
             feedback_reducer = EvaluationFeedbackReducer(
@@ -1619,14 +1633,13 @@ class EvaluationEngine:
         evaluation_capabilities = self._get_evaluation_capabilities(
             run=run,
             dataset_capabilities=dataset_capabilities,
-            llm_available=(judge_model_gateway is not None),
+            llm_available=judge_model_gateway is not None,
         )
 
         try:
             policy_configuration = self.run_validation_service.resolve_data_policy(
                 run.configuration or {},
             )
-
             policy = policy_configuration.policy
             policy_threshold = policy_configuration.threshold
 
@@ -1698,10 +1711,8 @@ class EvaluationEngine:
 
             if run.started_at is None:
                 run.started_at = started_at
-
         else:
             started_at = self._utc_now()
-
             run.started_at = started_at
             run.completed_at = None
             run.duration_ms = None
@@ -1739,6 +1750,38 @@ class EvaluationEngine:
                         retry=retry,
                     )
 
+            # Stop finalization when cancellation has been requested.
+            # This check applies to both sequential and batch execution.
+            if await self._is_cancel_requested(run.id):
+                completed_at = self._utc_now()
+                duration_ms = self._calculate_duration_ms(
+                    started_at,
+                    completed_at,
+                )
+
+                cancellation_result = await self.db.execute(
+                    update(EvaluationRun)
+                    .where(
+                        EvaluationRun.id == run.id,
+                        EvaluationRun.is_active.is_(True),
+                        EvaluationRun.status == EvaluationRunStatus.RUNNING,
+                        EvaluationRun.cancel_requested.is_(True),
+                    )
+                    .values(
+                        status=EvaluationRunStatus.CANCELLED,
+                        completed_at=completed_at,
+                        duration_ms=duration_ms,
+                    )
+                )
+
+                await self.db.commit()
+                await self.db.refresh(run)
+
+                if cancellation_result.rowcount == 1 or run.status == EvaluationRunStatus.CANCELLED:
+                    return run
+
+                raise RuntimeError("Evaluation run could not be finalized after cancellation.")
+
             final_feedback = None
 
             if self.feedback_aggregation_service is not None:
@@ -1747,18 +1790,13 @@ class EvaluationEngine:
                         run.id,
                     )
 
-                    if finalization.get(
-                        "finalized",
-                    ):
-                        final_feedback = finalization.get(
-                            "feedback",
-                        )
+                    if finalization.get("finalized"):
+                        final_feedback = finalization.get("feedback")
 
                 except Exception:
                     final_feedback = None
 
             completed_at = self._utc_now()
-
             run.completed_at = completed_at
             run.duration_ms = self._calculate_duration_ms(
                 started_at,
@@ -1770,7 +1808,13 @@ class EvaluationEngine:
                 run.id,
             )
 
-            if judge_model_gateway is not None:
+            if (
+                judge_model_gateway is not None
+                and not (
+                    summary["completed_cases"] == 0
+                    and summary["failed_cases"] > 0
+                )
+            ):
                 try:
                     judge_model_name = (
                         resolved_judge_model.model_identifier
@@ -1781,12 +1825,7 @@ class EvaluationEngine:
                         )
                     )
 
-                    judge_timeout = float(
-                        judge_model_configuration.get(
-                            "timeout",
-                            60.0,
-                        )
-                    )
+                    judge_timeout = float(judge_model_configuration.get("timeout", 60.0))
 
                     final_summary_feedback = (
                         await EvaluationRunSummaryService.generate_final_feedback(
@@ -1798,11 +1837,7 @@ class EvaluationEngine:
                             rolling_feedback=final_feedback,
                             model=judge_model_name,
                             timeout=judge_timeout,
-                            base_url=(
-                                judge_model_configuration.get(
-                                    "base_url",
-                                )
-                            ),
+                            base_url=judge_model_configuration.get("base_url"),
                         )
                     )
 
@@ -1842,9 +1877,7 @@ class EvaluationEngine:
                         EvaluationSummaryCache,
                     )
 
-                    await EvaluationSummaryCache(
-                        self.redis,
-                    ).set(
+                    await EvaluationSummaryCache(self.redis).set(
                         run.id,
                         summary,
                     )
@@ -1853,13 +1886,58 @@ class EvaluationEngine:
 
             if self.feedback_aggregation_service is not None:
                 try:
-                    await self.feedback_aggregation_service.clear(
-                        run.id,
-                    )
+                    await self.feedback_aggregation_service.clear(run.id)
                 except Exception:
                     pass
 
+            completed_at = self._utc_now()
+            duration_ms = self._calculate_duration_ms(
+                started_at,
+                completed_at,
+            )
+
+            completion_result = await self.db.execute(
+                update(EvaluationRun)
+                .where(
+                    EvaluationRun.id == run.id,
+                    EvaluationRun.is_active.is_(True),
+                    EvaluationRun.status == EvaluationRunStatus.RUNNING,
+                    EvaluationRun.cancel_requested.is_(False),
+                )
+                .values(
+                    status=EvaluationRunStatus.COMPLETED,
+                    completed_at=completed_at,
+                    duration_ms=duration_ms,
+                )
+            )
+
+            if completion_result.rowcount != 1:
+                cancellation_result = await self.db.execute(
+                    update(EvaluationRun)
+                    .where(
+                        EvaluationRun.id == run.id,
+                        EvaluationRun.is_active.is_(True),
+                        EvaluationRun.status == EvaluationRunStatus.RUNNING,
+                        EvaluationRun.cancel_requested.is_(True),
+                    )
+                    .values(
+                        status=EvaluationRunStatus.CANCELLED,
+                        completed_at=completed_at,
+                        duration_ms=duration_ms,
+                    )
+                )
+
+                await self.db.commit()
+                await self.db.refresh(run)
+
+                if cancellation_result.rowcount == 1 or run.status == EvaluationRunStatus.CANCELLED:
+                    return run
+
+                raise RuntimeError("Evaluation run could not be finalized from RUNNING status.")
+
             run.status = EvaluationRunStatus.COMPLETED
+            run.completed_at = completed_at
+            run.duration_ms = duration_ms
 
             await self.db.commit()
             await self.db.refresh(run)
@@ -1870,13 +1948,41 @@ class EvaluationEngine:
             await self.db.rollback()
 
             completed_at = self._utc_now()
-
-            run.status = EvaluationRunStatus.FAILED
-            run.completed_at = completed_at
-            run.duration_ms = self._calculate_duration_ms(
+            duration_ms = self._calculate_duration_ms(
                 started_at,
                 completed_at,
             )
+
+            failure_result = await self.db.execute(
+                update(EvaluationRun)
+                .where(
+                    EvaluationRun.id == run.id,
+                    EvaluationRun.is_active.is_(True),
+                    EvaluationRun.status == EvaluationRunStatus.RUNNING,
+                    EvaluationRun.cancel_requested.is_(False),
+                )
+                .values(
+                    status=EvaluationRunStatus.FAILED,
+                    completed_at=completed_at,
+                    duration_ms=duration_ms,
+                )
+            )
+
+            if failure_result.rowcount != 1:
+                await self.db.execute(
+                    update(EvaluationRun)
+                    .where(
+                        EvaluationRun.id == run.id,
+                        EvaluationRun.is_active.is_(True),
+                        EvaluationRun.status == EvaluationRunStatus.RUNNING,
+                        EvaluationRun.cancel_requested.is_(True),
+                    )
+                    .values(
+                        status=EvaluationRunStatus.CANCELLED,
+                        completed_at=completed_at,
+                        duration_ms=duration_ms,
+                    )
+                )
 
             await self.db.commit()
             await self.db.refresh(run)

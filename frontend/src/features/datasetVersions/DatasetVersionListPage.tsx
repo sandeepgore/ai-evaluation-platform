@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   AddOutlined,
   DatasetOutlined,
@@ -23,6 +23,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
 import { EmptyState } from "../../components/common/EmptyState";
+import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
 import { useDataset } from "../datasets/hooks";
@@ -36,6 +37,7 @@ import type { DatasetVersion, DatasetVersionStatus } from "./api";
 import { useDatasetVersions } from "./hooks";
 
 type VersionStatusFilter = "all" | DatasetVersionStatus;
+type VersionSortField = "version" | "status" | "case_count";
 
 export function DatasetVersionListPage() {
   const navigate = useNavigate();
@@ -46,6 +48,10 @@ export function DatasetVersionListPage() {
   const { data: dataset } = useDataset(datasetId ?? null);
 
   const [statusFilter, setStatusFilter] = useState<VersionStatusFilter>("all");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<VersionSortField>("version");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -58,6 +64,36 @@ export function DatasetVersionListPage() {
   const [finalizingVersion, setFinalizingVersion] =
     useState<DatasetVersion | null>(null);
 
+  const versions = data ?? [];
+  const filteredVersions =
+    statusFilter === "all"
+      ? versions
+      : versions.filter((version) => version.status === statusFilter);
+  const sortedVersions = useMemo(
+    () =>
+      [...filteredVersions].sort((a, b) => {
+        const comparison =
+          sortField === "status"
+            ? a.status.localeCompare(b.status)
+            : a[sortField] - b[sortField];
+        return sortDirection === "asc" ? comparison : -comparison;
+      }),
+    [filteredVersions, sortField, sortDirection],
+  );
+  const visibleVersions = sortedVersions.slice(
+    page * pageSize,
+    (page + 1) * pageSize,
+  );
+  const handleSort = (field: VersionSortField) => {
+    if (sortField === field) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+    setPage(0);
+  };
+
   if (!datasetId) {
     return <ErrorState message="Dataset ID is missing." />;
   }
@@ -69,13 +105,6 @@ export function DatasetVersionListPage() {
   if (isError) {
     return <ErrorState message="Unable to load dataset versions." />;
   }
-
-  const versions = data ?? [];
-
-  const filteredVersions =
-    statusFilter === "all"
-      ? versions
-      : versions.filter((version) => version.status === statusFilter);
 
   return (
     <Stack spacing={3.5} sx={{ pb: 4 }}>
@@ -173,9 +202,10 @@ export function DatasetVersionListPage() {
                 labelId="dataset-version-status-filter-label"
                 value={statusFilter}
                 label="Status"
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as VersionStatusFilter)
-                }
+                onChange={(event) => {
+                  setStatusFilter(event.target.value as VersionStatusFilter);
+                  setPage(0);
+                }}
                 startAdornment={
                   <FilterListOutlined
                     fontSize="small"
@@ -251,7 +281,10 @@ export function DatasetVersionListPage() {
         </Card>
       ) : (
         <DatasetVersionTable
-          versions={filteredVersions}
+          versions={visibleVersions}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={handleSort}
           onEdit={setEditingVersion}
           onDelete={setDeletingVersion}
           onFinalize={setFinalizingVersion}
@@ -261,6 +294,18 @@ export function DatasetVersionListPage() {
           onView={(version) =>
             navigate(`/datasets/${datasetId}/versions/${version.id}`)
           }
+        />
+      )}
+      {filteredVersions.length > 25 && (
+        <DataTablePagination
+          page={page}
+          pageSize={pageSize}
+          total={filteredVersions.length}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(0);
+          }}
         />
       )}
 

@@ -247,6 +247,7 @@ export function DatasetCaseTable({
                       onClick={() => onView(datasetCase)}
                       size="small"
                       color="primary"
+                      sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
                     >
                       <VisibilityOutlined fontSize="small" />
                     </IconButton>
@@ -260,6 +261,7 @@ export function DatasetCaseTable({
                           onClick={() => onEdit(datasetCase)}
                           size="small"
                           color="info"
+                        sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
                         >
                           <EditOutlined fontSize="small" />
                         </IconButton>
@@ -271,6 +273,7 @@ export function DatasetCaseTable({
                           onClick={() => onDelete(datasetCase)}
                           size="small"
                           color="error"
+                        sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
                         >
                           <DeleteOutlined fontSize="small" />
                         </IconButton>

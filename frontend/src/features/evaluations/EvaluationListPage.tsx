@@ -1,7 +1,8 @@
-import { AddOutlined, SearchOutlined } from "@mui/icons-material";
+import { AddOutlined, DownloadOutlined, SearchOutlined } from "@mui/icons-material";
 import {
   Box,
   Button,
+  CircularProgress,
   InputAdornment,
   Paper,
   Stack,
@@ -12,23 +13,30 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DataTablePagination } from "../../components/common/DataTablePagination";
+import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { downloadBlob } from "../../components/common/downloadBlob";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
 import { useAppContextStore } from "../../store/appContextStore";
+import { useNotification } from "../../components/common/NotificationProvider";
 import { useModels } from "../models/hooks";
 import type { EvaluationRun } from "./api";
+import { downloadSchedulerLogs } from "./api";
 import {
   EvaluationTable,
   type EvaluationSortDirection,
   type EvaluationSortField,
 } from "./EvaluationTable";
-import { useEvaluationRuns } from "./hooks";
+import { useEvaluationRuns, useSchedulerLogsAvailability } from "./hooks";
 
 const DEFAULT_PAGE_SIZE = 25;
 
 export function EvaluationListPage() {
   const navigate = useNavigate();
+  const { notify } = useNotification();
+  const [isDownloadingSchedulerLogs, setIsDownloadingSchedulerLogs] = useState(false);
+  const { data: hasSchedulerLogs } = useSchedulerLogsAvailability();
 
   const selectedProjectId = useAppContextStore(
     (state) => state.selectedProjectId,
@@ -38,7 +46,7 @@ export function EvaluationListPage() {
     data: runs,
     isLoading: isRunsLoading,
     isError: isRunsError,
-  } = useEvaluationRuns();
+  } = useEvaluationRuns({ projectId: selectedProjectId });
 
   const { data: models } = useModels(selectedProjectId);
 
@@ -162,6 +170,22 @@ export function EvaluationListPage() {
     navigate("/evaluations/new");
   };
 
+  if (!selectedProjectId) {
+    return (
+      <Stack spacing={3}>
+        <AppBreadcrumbs items={[{ label: "Evaluations" }]} />
+        <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+            Select a project
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Choose an organization and project from the Dashboard to view its evaluation runs.
+          </Typography>
+        </Paper>
+      </Stack>
+    );
+  }
+
   if (isRunsLoading) {
     return <LoadingState />;
   }
@@ -172,6 +196,7 @@ export function EvaluationListPage() {
 
   return (
     <Stack spacing={3}>
+      <AppBreadcrumbs items={[{ label: "Evaluations" }]} />
       {/* Header Section */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
@@ -191,20 +216,46 @@ export function EvaluationListPage() {
           </Typography>
         </Stack>
 
-        <Button
-          variant="contained"
-          disableElevation
-          startIcon={<AddOutlined />}
-          onClick={handleCreate}
-          sx={{
-            borderRadius: 2,
-            textTransform: "none",
-            fontWeight: 600,
-            px: 2.5,
-          }}
-        >
-          Create Evaluation
-        </Button>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={isDownloadingSchedulerLogs ? <CircularProgress size={16} /> : <DownloadOutlined />}
+            disabled={!hasSchedulerLogs || isDownloadingSchedulerLogs}
+            onClick={async () => {
+              setIsDownloadingSchedulerLogs(true);
+              try {
+                const archive = await downloadSchedulerLogs();
+                downloadBlob(archive, "evaluation-scheduler-logs.zip");
+              } catch (downloadError) {
+                notify(
+                  downloadError instanceof Error
+                    ? downloadError.message
+                    : "Unable to download scheduler logs.",
+                  "error",
+                );
+              } finally {
+                setIsDownloadingSchedulerLogs(false);
+              }
+            }}
+            sx={{ borderRadius: 2, textTransform: "none", whiteSpace: "nowrap" }}
+          >
+            {isDownloadingSchedulerLogs ? "Preparing logs..." : "Scheduler logs"}
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            startIcon={<AddOutlined />}
+            onClick={handleCreate}
+            sx={{
+              borderRadius: 2,
+              textTransform: "none",
+              fontWeight: 600,
+              px: 2.5,
+            }}
+          >
+            Create Evaluation
+          </Button>
+        </Stack>
       </Stack>
 
       {/* Main Content Area */}

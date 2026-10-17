@@ -13,6 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import { VisibilityOutlined } from "@mui/icons-material";
+import { DataTableSortLabel, type SortDirection } from "../../../components/common/DataTableSortLabel";
 
 import type { EvaluationResult } from "../api";
 
@@ -25,6 +26,9 @@ interface EvaluationResultsTableProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onInspect: (result: EvaluationResult) => void;
+  sortField?: "status" | "created_at" | "latency_ms";
+  sortDirection?: SortDirection;
+  onSort?: (field: "status" | "created_at" | "latency_ms") => void;
 }
 
 function getStatusColor(
@@ -62,6 +66,9 @@ export default function EvaluationResultsTable({
   onPageChange,
   onPageSizeChange,
   onInspect,
+  sortField = "created_at",
+  sortDirection = "desc",
+  onSort = () => undefined,
 }: EvaluationResultsTableProps) {
   return (
     <Paper variant="outlined">
@@ -69,11 +76,11 @@ export default function EvaluationResultsTable({
         <Table size="small" aria-label="Evaluation results">
           <TableHead>
             <TableRow>
-              <TableCell>Status</TableCell>
+              <TableCell><DataTableSortLabel field="status" activeField={sortField} direction={sortDirection} label="Status" onSort={onSort} /></TableCell>
               <TableCell>Dataset case</TableCell>
               <TableCell>Feedback / error</TableCell>
-              <TableCell align="right">Latency</TableCell>
-              <TableCell>Created</TableCell>
+              <TableCell align="right"><DataTableSortLabel field="latency_ms" activeField={sortField} direction={sortDirection} label="Latency" onSort={onSort} /></TableCell>
+              <TableCell><DataTableSortLabel field="created_at" activeField={sortField} direction={sortDirection} label="Created" onSort={onSort} /></TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>

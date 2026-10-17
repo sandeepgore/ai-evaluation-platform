@@ -343,3 +343,77 @@ async def test_create_rejects_inactive_model():
     db.add.assert_not_called()
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_request_cancel_cancels_pending_run():
+    run_id = uuid4()
+    run = MagicMock()
+    run.id = run_id
+    run.status = EvaluationRunStatus.CANCELLED
+
+    db = AsyncMock()
+    db.execute.return_value.rowcount = 1
+
+    with patch.object(
+        EvaluationRunService,
+        "get_by_id",
+        new_callable=AsyncMock,
+        return_value=run,
+    ):
+        result = await EvaluationRunService.request_cancel(db, run_id)
+
+    assert result is run
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_request_cancel_flags_running_run():
+    run_id = uuid4()
+    run = MagicMock()
+    run.id = run_id
+    run.status = EvaluationRunStatus.RUNNING
+    run.cancel_requested = True
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        MagicMock(rowcount=0),  # Not pending
+        MagicMock(rowcount=1),  # Running run flagged
+    ]
+
+    with patch.object(
+        EvaluationRunService,
+        "get_by_id",
+        new_callable=AsyncMock,
+        return_value=run,
+    ):
+        result = await EvaluationRunService.request_cancel(db, run_id)
+
+    assert result is run
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_request_cancel_does_not_overwrite_terminal_run():
+    run_id = uuid4()
+    run = MagicMock()
+    run.id = run_id
+    run.status = EvaluationRunStatus.COMPLETED
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        MagicMock(rowcount=0),  # Not pending
+        MagicMock(rowcount=0),  # Not running
+    ]
+
+    with patch.object(
+        EvaluationRunService,
+        "get_by_id",
+        new_callable=AsyncMock,
+        return_value=run,
+    ):
+        result = await EvaluationRunService.request_cancel(db, run_id)
+
+    assert result is run
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()

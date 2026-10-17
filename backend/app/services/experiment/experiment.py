@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.experiment.experiment import Experiment
 from app.models.experiment.experiment_snapshot import ExperimentSnapshot
+from app.models.dataset.dataset import Dataset
+from app.models.dataset_version.version import DatasetVersion
 from app.schemas.experiment.experiment import ExperimentCreate
 from app.schemas.experiment.snapshot import ExperimentSnapshotCreate
 from app.services.evaluation.evaluation import EvaluationRunService
@@ -21,6 +23,7 @@ class ExperimentService:
 
     async def create(self, data: ExperimentCreate) -> Experiment:
         experiment = Experiment(
+            project_id=data.project_id,
             name=data.name,
             description=data.description,
         )
@@ -47,6 +50,7 @@ class ExperimentService:
     async def list(
         self,
         scope: str = "recent",
+        project_id: UUID | None = None,
     ) -> list[Experiment]:
         if scope not in {"recent", "all"}:
             raise ValueError("Invalid experiment scope. Expected 'recent' or 'all'.")
@@ -54,6 +58,9 @@ class ExperimentService:
         query = select(Experiment).where(
             Experiment.is_active.is_(True),
         )
+
+        if project_id is not None:
+            query = query.where(Experiment.project_id == project_id)
 
         if scope == "recent":
             query = query.where(Experiment.created_at >= func.now() - text("interval '3 months'"))
@@ -100,6 +107,17 @@ class ExperimentService:
 
             if run_status != "completed":
                 raise ValueError("Evaluation run must be completed")
+
+            if experiment.project_id is not None:
+                run_project_result = await self.db.execute(
+                    select(Dataset.project_id)
+                    .join(DatasetVersion, DatasetVersion.dataset_id == Dataset.id)
+                    .where(DatasetVersion.id == run.dataset_version_id)
+                )
+                if run_project_result.scalar_one_or_none() != experiment.project_id:
+                    raise ValueError(
+                        "Evaluation runs must belong to the experiment project"
+                    )
 
             run_results[str(run_id)] = {
                 "run": {
@@ -183,7 +201,7 @@ class ExperimentService:
         baseline_metrics = baseline_summary.get("metrics", {})
         candidate_metrics = candidate_summary.get("metrics", {})
 
-        for metric_name in set(baseline_metrics) & set(candidate_metrics):
+        for metric_name in sorted(set(baseline_metrics) & set(candidate_metrics)):
             baseline_value = baseline_metrics[metric_name]
             candidate_value = candidate_metrics[metric_name]
 
@@ -281,8 +299,8 @@ class ExperimentService:
         # Cost
         # --------------------------------------------------------------
 
-        baseline_cost = baseline_performance.get("cost", {})
-        candidate_cost = candidate_performance.get("cost", {})
+        baseline_cost = baseline_performance.get("cost") or {}
+        candidate_cost = candidate_performance.get("cost") or {}
 
         cost_fields = [
             "input_cost",
@@ -351,3 +369,15 @@ class ExperimentService:
         )
 
         return result.scalar_one_or_none()
+
+    async def list_snapshots(
+        self,
+        experiment_id: UUID,
+    ) -> list[ExperimentSnapshot]:
+        result = await self.db.execute(
+            select(ExperimentSnapshot)
+            .where(ExperimentSnapshot.experiment_id == experiment_id)
+            .order_by(ExperimentSnapshot.created_at.desc())
+        )
+
+        return list(result.scalars().all())

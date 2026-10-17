@@ -88,6 +88,7 @@ class EvaluationScheduleService:
             model_id=data.model_id,
             name=data.name,
             evaluation_type=data.evaluation_type,
+            mode=data.mode,
             configuration=data.configuration,
             schedule_type=data.schedule_type,
             schedule_expression=data.schedule_expression,
@@ -150,6 +151,29 @@ class EvaluationScheduleService:
         update_data = data.model_dump(
             exclude_unset=True,
         )
+
+        if (
+            schedule.schedule_type == EvaluationScheduleType.RECURRING
+            and {"schedule_expression", "timezone"}.intersection(update_data)
+        ):
+            expression = update_data.get(
+                "schedule_expression",
+                schedule.schedule_expression,
+            )
+            timezone_name = update_data.get("timezone", schedule.timezone)
+            if not expression:
+                raise ValueError("schedule_expression is required for recurring schedules.")
+            try:
+                schedule_timezone = ZoneInfo(timezone_name)
+                now_local = datetime.now(schedule_timezone)
+                update_data["next_run_at"] = croniter(
+                    expression,
+                    now_local,
+                ).get_next(datetime).astimezone(UTC)
+            except ZoneInfoNotFoundError as exc:
+                raise ValueError("Invalid timezone") from exc
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Invalid schedule expression") from exc
 
         for field, value in update_data.items():
             setattr(schedule, field, value)

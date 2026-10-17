@@ -14,6 +14,7 @@ client = TestClient(app)
 def create_fake_experiment():
     return SimpleNamespace(
         id=uuid4(),
+        project_id=None,
         name="RAG Evaluation Experiment",
         description="Compare evaluation runs",
         is_active=True,
@@ -123,7 +124,7 @@ def test_list_experiments():
     assert data[0]["id"] == str(experiment_one.id)
     assert data[1]["id"] == str(experiment_two.id)
 
-    list_mock.assert_awaited_once_with(scope="recent")
+    list_mock.assert_awaited_once_with(scope="recent", project_id=None)
 
 
 def test_list_experiments_all_scope():
@@ -145,7 +146,7 @@ def test_list_experiments_all_scope():
     assert len(data) == 1
     assert data[0]["id"] == str(experiment.id)
 
-    list_mock.assert_awaited_once_with(scope="all")
+    list_mock.assert_awaited_once_with(scope="all", project_id=None)
 
 
 def test_list_experiments_rejects_invalid_scope():

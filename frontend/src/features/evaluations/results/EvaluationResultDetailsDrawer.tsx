@@ -18,28 +18,6 @@ interface EvaluationResultDetailsDrawerProps {
   onClose: () => void;
 }
 
-function Detail({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number | null | undefined;
-}) {
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography
-        variant="body2"
-        sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}
-      >
-        {value == null || value === "" ? "—" : String(value)}
-      </Typography>
-    </Box>
-  );
-}
-
 export default function EvaluationResultDetailsDrawer({
   result,
   open,
@@ -61,7 +39,7 @@ export default function EvaluationResultDetailsDrawer({
       }}
     >
       {result && (
-        <Stack spacing={2.5} sx={{ p: { xs: 2, sm: 3 } }}>
+        <Stack spacing={2} sx={{ p: { xs: 2, sm: 3 } }}>
           <Stack
             sx={{
               display: "flex",
@@ -72,10 +50,7 @@ export default function EvaluationResultDetailsDrawer({
           >
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                Evaluation result
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Inspect the output, evaluator feedback, scores, and trace.
+                Case result
               </Typography>
             </Box>
 
@@ -91,25 +66,6 @@ export default function EvaluationResultDetailsDrawer({
           />
 
           <Divider />
-
-          <Stack spacing={1.5}>
-            <Detail label="Result ID" value={result.id} />
-            <Detail
-              label="Evaluation run ID"
-              value={result.evaluation_run_id}
-            />
-            <Detail label="Dataset case ID" value={result.dataset_case_id} />
-            <Detail label="Created at" value={result.created_at} />
-            <Detail
-              label="Latency"
-              value={
-                result.latency_ms == null ? null : `${result.latency_ms} ms`
-              }
-            />
-            <Detail label="Input tokens" value={result.input_tokens} />
-            <Detail label="Output tokens" value={result.output_tokens} />
-            <Detail label="Total tokens" value={result.total_tokens} />
-          </Stack>
 
           {result.error_message && (
             <Box

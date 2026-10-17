@@ -640,14 +640,14 @@ Rules:
 3. Never invent metric values.
 4. Never recalculate the overall score.
 5. Treat N/A as unavailable applicability, not as a zero score.
-6. Strengths must contain at least 3 evidence-grounded observations.
+6. Include strengths only when supported by successful cases or metric evidence; strengths may be empty.
 7. Weaknesses must contain at least 3 evidence-grounded observations.
 8. Patterns must contain at least 3 recurring or cross-case observations.
 9. Recommendations must contain at least 3 actionable recommendations.
 10. Consider performance information such as completion, failure, and
     not-applicable counts when it provides meaningful evidence.
 11. Do not manufacture praise or criticism unsupported by the supplied evidence.
-12. When evidence is limited, make conservative evidence-based observations.
+12. When evidence is limited, make conservative evidence-based observations and do not pad sections with generic claims.
 13. evaluator_feedback may remain an empty list.
 14. Return JSON only.
 """.strip()
@@ -711,6 +711,40 @@ Rules:
         weaknesses: list[str] = []
         patterns: list[str] = []
         recommendations: list[str] = []
+
+        # Do not infer model quality from a run where no case completed.
+        # In particular, avoid the generic strength padding below: execution
+        # failures are not evidence of successful model behavior.
+        if completed_cases == 0 and failed_cases > 0:
+            not_applicable_cases = int(performance.get("not_applicable_cases", 0) or 0)
+            total_cases = int(performance.get("total_results", failed_cases) or failed_cases)
+            overall = (
+                f"Evaluation could not assess model quality: all {failed_cases} "
+                "case(s) failed before producing usable results."
+            )
+            weaknesses = [
+                f"{failed_cases} of {total_cases} case(s) failed during execution.",
+                "No cases completed successfully, so the run provides no evidence of model quality.",
+                "No metric scores are available from successful cases for this run.",
+            ]
+            patterns = [
+                f"Completed cases: {completed_cases}.",
+                f"Failed cases: {failed_cases}.",
+                f"Not applicable cases: {not_applicable_cases}.",
+            ]
+            recommendations = [
+                "Inspect the failed case details and evaluation logs to identify the execution error.",
+                "Resolve the underlying model, provider, or evaluator error before rerunning.",
+                "Rerun the evaluation and review quality metrics after cases complete successfully.",
+            ]
+            return {
+                "overall": overall,
+                "strengths": [],
+                "weaknesses": weaknesses,
+                "patterns": patterns,
+                "recommendations": recommendations,
+                "evaluator_feedback": [],
+            }
 
         # --------------------------------------------------------------
         # Metric observations
@@ -859,6 +893,21 @@ Rules:
         # --------------------------------------------------------------
 
         if isinstance(rolling_feedback, dict):
+            for section, destination in (
+                ("strengths", strengths),
+                ("weaknesses", weaknesses),
+            ):
+                observations = rolling_feedback.get(section, [])
+                if isinstance(observations, list):
+                    for observation in observations:
+                        if (
+                            isinstance(observation, str)
+                            and observation.strip()
+                            and observation.strip() not in destination
+                            and len(destination) < 3
+                        ):
+                            destination.append(observation.strip())
+
             rolling_patterns = rolling_feedback.get(
                 "patterns",
                 [],

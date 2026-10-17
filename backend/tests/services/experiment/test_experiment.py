@@ -163,6 +163,7 @@ async def test_delete_experiment():
 async def test_create_snapshot_with_single_run(monkeypatch):
     experiment = MagicMock()
     experiment.id = uuid4()
+    experiment.project_id = None
 
     run_id = uuid4()
     run = MagicMock()
@@ -239,6 +240,7 @@ async def test_create_snapshot_compares_candidate_against_first_run(
 ):
     experiment = MagicMock()
     experiment.id = uuid4()
+    experiment.project_id = None
 
     baseline_id = uuid4()
     candidate_id = uuid4()

@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.sql.dml import Update
 
 from app.models.evaluation import EvaluationRunStatus
 from app.models.evaluation.evaluation_run import EvaluationRunMode
@@ -292,12 +293,27 @@ def create_engine_mocks(model):
     result.scalar_one_or_none.return_value = model
     result.scalars.return_value.all.return_value = []
 
+    # Default state for cancellation checks: not cancelled.
+    result.one_or_none.return_value = (
+        EvaluationRunStatus.PENDING,
+        False,
+    )
+
+    async def execute_side_effect(statement, *args, **kwargs):
+        if isinstance(statement, Update):
+            update_result = MagicMock()
+            update_result.rowcount = 1
+            return update_result
+
+        return result
+
     db.execute = AsyncMock(
-        return_value=result,
+        side_effect=execute_side_effect,
     )
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
 
     evaluator_registry = FakeRegistry()
 
@@ -817,6 +833,7 @@ async def test_engine_rejects_reference_evaluator_without_reference_before_model
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
 
     model_gateway = MagicMock()
     model_gateway.generate = AsyncMock()
@@ -909,6 +926,7 @@ async def test_engine_rejects_context_evaluator_without_context_before_model_exe
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
 
     model_gateway = MagicMock()
     model_gateway.generate = AsyncMock()
@@ -997,6 +1015,7 @@ async def test_engine_rejects_llm_evaluator_without_llm_before_model_execution(
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
 
     model_gateway = MagicMock()
     model_gateway.generate = AsyncMock()
@@ -1191,6 +1210,7 @@ async def test_engine_rejects_invalid_llm_available_configuration(
 
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
 
     model_gateway = MagicMock()
     model_gateway.generate = AsyncMock()
@@ -2961,3 +2981,470 @@ async def test_engine_resolves_prompt_for_batch_cases(monkeypatch):
     ]
 
     assert "prompt" not in call.kwargs["configuration"]
+
+
+@pytest.mark.asyncio
+async def test_is_cancel_requested_returns_true_when_flag_is_set():
+    model = create_model()
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    state_result = MagicMock()
+    state_result.one_or_none.return_value = (
+        EvaluationRunStatus.RUNNING,
+        True,
+    )
+    db.execute = AsyncMock(return_value=state_result)
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=MagicMock(),
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    assert await engine._is_cancel_requested(uuid4()) is True
+
+
+@pytest.mark.asyncio
+async def test_is_cancel_requested_returns_true_when_run_is_cancelled():
+    model = create_model()
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    state_result = MagicMock()
+    state_result.one_or_none.return_value = (
+        EvaluationRunStatus.CANCELLED,
+        False,
+    )
+    db.execute = AsyncMock(return_value=state_result)
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=MagicMock(),
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    assert await engine._is_cancel_requested(uuid4()) is True
+
+
+@pytest.mark.asyncio
+async def test_engine_batch_stops_after_current_batch_when_cancel_requested(
+    monkeypatch,
+):
+    model = create_model()
+    cases = [
+        create_case("question 1", "answer 1"),
+        create_case("question 2", "answer 2"),
+        create_case("question 3", "answer 3"),
+        create_case("question 4", "answer 4"),
+    ]
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="batch",
+        batch_size=2,
+    )
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    # Keep the run active until the first batch is committed.
+    cancellation_state = {
+        "requested": False,
+        "commits": 0,
+    }
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = model
+    result.scalars.return_value.all.return_value = cases
+
+    def get_cancellation_state():
+        return (
+            EvaluationRunStatus.RUNNING,
+            cancellation_state["requested"],
+        )
+
+    result.one_or_none.side_effect = get_cancellation_state
+
+    async def execute_side_effect(statement, *args, **kwargs):
+        if isinstance(statement, Update):
+            update_result = MagicMock()
+            update_result.rowcount = 1
+            return update_result
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    async def commit_side_effect():
+        cancellation_state["commits"] += 1
+        if cancellation_state["commits"] >= 1:
+            cancellation_state["requested"] = True
+
+    db.commit = AsyncMock(side_effect=commit_side_effect)
+    db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock(
+        return_value=[
+            create_response("answer 1"),
+            create_response("answer 2"),
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_engine_batch_stops_after_current_batch_when_cancel_requested(
+    monkeypatch,
+):
+    model = create_model()
+    cases = [
+        create_case("question 1", "answer 1"),
+        create_case("question 2", "answer 2"),
+        create_case("question 3", "answer 3"),
+        create_case("question 4", "answer 4"),
+    ]
+
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="batch",
+        batch_size=2,
+    )
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+
+    cancellation_state = {"requested": False}
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = model
+    result.scalars.return_value.all.return_value = cases
+    result.one_or_none.side_effect = lambda: (
+        EvaluationRunStatus.RUNNING,
+        cancellation_state["requested"],
+    )
+
+    async def execute_side_effect(statement, *args, **kwargs):
+        if isinstance(statement, Update):
+            update_result = MagicMock()
+            update_result.rowcount = 1
+            return update_result
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    async def commit_side_effect():
+        # Simulate a cancellation request arriving after the first
+        # batch's results have been committed.
+        cancellation_state["requested"] = True
+
+    db.commit = AsyncMock(side_effect=commit_side_effect)
+    db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock()
+    model_gateway.generate_batch = AsyncMock(
+        return_value=[
+            create_response("answer 1"),
+            create_response("answer 2"),
+        ]
+    )
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    monkeypatch.setattr(
+        engine,
+        "_build_configuration",
+        lambda **kwargs: {},
+    )
+    monkeypatch.setattr(
+        engine,
+        "_evaluate_case_eligibility",
+        lambda **kwargs: {},
+    )
+    monkeypatch.setattr(
+        engine,
+        "_has_applicable_evaluator",
+        lambda eligibility: True,
+    )
+    monkeypatch.setattr(
+        engine,
+        "_resolve_case_prompt",
+        lambda **kwargs: "test prompt",
+    )
+
+    evaluate_case = AsyncMock()
+    monkeypatch.setattr(engine, "_evaluate_case", evaluate_case)
+
+    await engine._execute_batch(
+        run=run,
+        cases=cases,
+        model=model,
+        evaluator_configs=[],
+        model_gateway=model_gateway,
+        batch_size=2,
+        scoring_configuration={},
+    )
+
+    assert model_gateway.generate_batch.await_count == 1
+    assert len(model_gateway.generate_batch.await_args.kwargs["prompts"]) == 2
+    assert evaluate_case.await_count == 2
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_engine_sequential_stops_after_current_case_when_cancel_requested(
+    monkeypatch,
+):
+    model = create_model()
+    cases = [
+        create_case("question 1", "answer 1"),
+        create_case("question 2", "answer 2"),
+    ]
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+    cancellation_state = {"requested": False}
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = model
+    result.scalars.return_value.all.return_value = cases
+    result.one_or_none.side_effect = lambda: (
+        EvaluationRunStatus.RUNNING,
+        cancellation_state["requested"],
+    )
+
+    async def execute_side_effect(statement, *args, **kwargs):
+        if isinstance(statement, Update):
+            update_result = MagicMock()
+            update_result.rowcount = 1
+            return update_result
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    async def commit_side_effect():
+        # The first case is now persisted; cancellation arrives.
+        cancellation_state["requested"] = True
+
+    db.commit = AsyncMock(side_effect=commit_side_effect)
+
+    async def refresh_side_effect(instance):
+        if cancellation_state["requested"]:
+            instance.status = EvaluationRunStatus.CANCELLED
+
+    db.refresh = AsyncMock(side_effect=refresh_side_effect)
+    db.rollback = AsyncMock()
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock(
+        return_value=create_response("answer 1"),
+    )
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=cases),
+    )
+    mock_dataset_capabilities(monkeypatch, cases)
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        AsyncMock(),
+    )
+
+    # Avoid unrelated evaluator setup; exercise the real sequential loop.
+    monkeypatch.setattr(
+        engine,
+        "_evaluate_case_eligibility",
+        lambda **kwargs: {},
+    )
+    monkeypatch.setattr(
+        engine,
+        "_has_applicable_evaluator",
+        lambda eligibility: True,
+    )
+    monkeypatch.setattr(
+        engine,
+        "_resolve_case_prompt",
+        lambda **kwargs: "test prompt",
+    )
+    evaluate_case = AsyncMock()
+    monkeypatch.setattr(engine, "_evaluate_case", evaluate_case)
+
+    result = await engine.execute(run.id)
+
+    assert model_gateway.generate.await_count == 1
+    assert evaluate_case.await_count == 1
+    assert db.commit.await_count >= 2
+    assert result.status == EvaluationRunStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_engine_cancellation_during_summary_prevents_completion(
+    monkeypatch,
+):
+    model = create_model()
+    cases = [
+        create_case("question 1", "answer 1"),
+        create_case("question 2", "answer 2"),
+    ]
+    run = create_run(
+        model_id=model.id,
+        dataset_version_id=uuid4(),
+        evaluation_type=EvaluationType.TEXT,
+        execution_mode="sequential",
+    )
+
+    db, evaluator_registry, scoring_service = create_engine_mocks(model)
+    cancellation_state = {
+        "requested": False,
+        "cancel_update_applied": False,
+        "completed_update_attempted": False,
+    }
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = model
+    result.scalars.return_value.all.return_value = cases
+    result.one_or_none.side_effect = lambda: (
+        EvaluationRunStatus.RUNNING,
+        cancellation_state["requested"],
+    )
+
+    async def execute_side_effect(statement, *args, **kwargs):
+        if isinstance(statement, Update):
+            values = statement._values or {}
+            update_values = {
+                getattr(key, "key", key): getattr(value, "value", value)
+                for key, value in values.items()
+            }
+            requested_status = update_values.get("status")
+
+            update_result = MagicMock()
+
+            if requested_status == EvaluationRunStatus.COMPLETED:
+                # Cancellation arrived before the completion update.
+                cancellation_state["completed_update_attempted"] = True
+                update_result.rowcount = 0
+            elif requested_status == EvaluationRunStatus.CANCELLED:
+                update_result.rowcount = 1
+                cancellation_state["cancel_update_applied"] = True
+            else:
+                update_result.rowcount = 1
+
+            return update_result
+
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+
+    async def refresh_side_effect(instance):
+        if cancellation_state["cancel_update_applied"]:
+            instance.status = EvaluationRunStatus.CANCELLED
+
+    db.refresh = AsyncMock(side_effect=refresh_side_effect)
+
+    model_gateway = MagicMock()
+    model_gateway.generate = AsyncMock(
+        return_value=create_response("answer"),
+    )
+    model_gateway.generate_batch = AsyncMock()
+
+    engine = EvaluationEngine(
+        db=db,
+        model_gateway=model_gateway,
+        evaluator_registry=evaluator_registry,
+        scoring_service=scoring_service,
+    )
+
+    mock_run_summary_services(monkeypatch)
+
+    original_calculate = engine_module.EvaluationRunSummaryService.calculate
+
+    async def calculate_with_cancellation(*args, **kwargs):
+        # Both cases have finished; cancellation arrives during finalization.
+        cancellation_state["requested"] = True
+        return await original_calculate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunSummaryService,
+        "calculate",
+        AsyncMock(side_effect=calculate_with_cancellation),
+    )
+
+    monkeypatch.setattr(
+        engine_module.EvaluationRunService,
+        "get_by_id",
+        AsyncMock(return_value=run),
+    )
+    monkeypatch.setattr(
+        engine_module.DatasetCaseService,
+        "list",
+        AsyncMock(return_value=cases),
+    )
+    mock_dataset_capabilities(monkeypatch, cases)
+    monkeypatch.setattr(
+        engine_module.EvaluationResultService,
+        "create",
+        AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        engine,
+        "_evaluate_case_eligibility",
+        lambda **kwargs: {},
+    )
+    monkeypatch.setattr(
+        engine,
+        "_has_applicable_evaluator",
+        lambda eligibility: True,
+    )
+    monkeypatch.setattr(
+        engine,
+        "_resolve_case_prompt",
+        lambda **kwargs: "test prompt",
+    )
+    monkeypatch.setattr(
+        engine,
+        "_evaluate_case",
+        AsyncMock(),
+    )
+
+    final_run = await engine.execute(run.id)
+
+    assert cancellation_state["requested"] is True
+    assert cancellation_state["completed_update_attempted"] is True
+    assert cancellation_state["cancel_update_applied"] is True
+    assert final_run.status == EvaluationRunStatus.CANCELLED

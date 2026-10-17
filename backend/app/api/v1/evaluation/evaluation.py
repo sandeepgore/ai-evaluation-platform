@@ -60,12 +60,14 @@ async def create_evaluation_run(
 async def list_evaluation_runs(
     dataset_version_id: UUID | None = Query(default=None),
     model_id: UUID | None = Query(default=None),
+    project_id: UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     return await EvaluationRunService.list(
         db,
         dataset_version_id=dataset_version_id,
         model_id=model_id,
+        project_id=project_id,
     )
 
 
@@ -286,5 +288,27 @@ async def execute_evaluation_run(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Evaluation queue is unavailable.",
         ) from exc
+
+    return run
+
+
+@router.post(
+    "/{run_id}/cancel",
+    response_model=EvaluationRunResponse,
+)
+async def cancel_evaluation_run(
+    run_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    run = await EvaluationRunService.request_cancel(
+        db,
+        run_id,
+    )
+
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation run not found",
+        )
 
     return run

@@ -10,7 +10,6 @@ import { EvaluationResultStatistics } from "../api";
 
 interface EvaluationResultsStatsProps {
   statistics?: EvaluationResultStatistics;
-  notApplicableCount?: number;
   loading?: boolean;
 }
 
@@ -49,7 +48,6 @@ const cards = [
 
 export default function EvaluationResultsStats({
   statistics,
-  notApplicableCount,
   loading = false,
 }: EvaluationResultsStatsProps) {
   const values: Record<(typeof cards)[number]["key"], number | undefined> = {
@@ -57,7 +55,7 @@ export default function EvaluationResultsStats({
     completed: statistics?.completed,
     failed: statistics?.failed,
     pending: statistics?.pending,
-    notApplicable: notApplicableCount,
+    notApplicable: statistics?.not_applicable,
   };
 
   return (
