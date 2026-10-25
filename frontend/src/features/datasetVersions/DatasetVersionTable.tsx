@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Box,
-  Button,
   Chip,
   IconButton,
   LinearProgress,
@@ -23,8 +22,8 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import StorageOutlinedIcon from "@mui/icons-material/StorageOutlined";
-import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
+import { PermissionGate } from "../../components/common/PermissionGate";
 
 import { DatasetVersionStatusChip } from "./DatasetVersionStatusChip";
 import type { DatasetVersion } from "./api";
@@ -61,7 +60,8 @@ export function DatasetVersionTable({
       sx={{
         borderRadius: 2.5,
         borderColor: "divider",
-        overflow: "hidden",
+        overflowX: "auto",
+        overflowY: "auto",
         boxShadow: "none",
       }}
     >
@@ -257,7 +257,6 @@ export function DatasetVersionTable({
                           <LinearProgress
                             variant="determinate"
                             value={Math.min(refCoverage, 100)}
-                            color="success"
                             sx={{
                               height: 4,
                               borderRadius: 2,
@@ -316,7 +315,7 @@ export function DatasetVersionTable({
                   {/* WORKFLOW COLUMN: State Transition Actions */}
                   <TableCell>
                     {isDraft ? (
-                      <Tooltip
+                      <PermissionGate permission="write"><Tooltip
                         title={
                           version.case_count === 0
                             ? "Add at least one case before finalizing"
@@ -324,35 +323,22 @@ export function DatasetVersionTable({
                         }
                       >
                         <span>
-                          <Button
-                            variant="outlined"
-                            color="success"
+                          <IconButton
                             size="small"
-                            startIcon={<CheckCircleOutlinedIcon />}
                             onClick={() => onFinalize(version)}
                             disabled={version.case_count === 0}
-                            sx={{
-                              borderRadius: 1.5,
-                              textTransform: "none",
-                              fontWeight: 600,
-                              fontSize: "0.75rem",
-                              py: 0.4,
-                              px: 1.2,
-                            }}
+                            aria-label={`Finalize version ${version.version}`}
                           >
-                            Finalize
-                          </Button>
+                            <CheckCircleOutlinedIcon fontSize="small" />
+                          </IconButton>
                         </span>
-                      </Tooltip>
+                      </Tooltip></PermissionGate>
                     ) : (
                       <Stack
                         direction="row"
                         spacing={0.5}
                         sx={{ alignItems: "center" }}
                       >
-                        <TaskAltIcon
-                          sx={{ fontSize: 16, color: "success.main" }}
-                        />
                         <Typography
                           variant="caption"
                           color="text.secondary"
@@ -379,7 +365,7 @@ export function DatasetVersionTable({
                           size="small"
                           sx={{
                             color: "text.secondary",
-                            "&:hover": { color: "primary.main" },
+                            "&:hover": { color: "text.primary" },
                           }}
                         >
                           <StorageOutlinedIcon fontSize="small" />
@@ -402,7 +388,7 @@ export function DatasetVersionTable({
                       </Tooltip>
 
                       {/* Edit Description */}
-                      <Tooltip title="Edit description">
+                      <PermissionGate permission="write"><Tooltip title="Edit description">
                         <IconButton
                           aria-label={`Edit version ${version.version}`}
                           onClick={() => onEdit(version)}
@@ -414,10 +400,10 @@ export function DatasetVersionTable({
                         >
                           <EditOutlinedIcon fontSize="small" />
                         </IconButton>
-                      </Tooltip>
+                      </Tooltip></PermissionGate>
 
                       {/* Delete Action */}
-                      <Tooltip
+                      <PermissionGate permission="write"><Tooltip
                         title={
                           version.case_count > 0
                             ? "Cannot delete a version that contains cases"
@@ -440,7 +426,7 @@ export function DatasetVersionTable({
                             <DeleteOutlineIcon fontSize="small" />
                           </IconButton>
                         </span>
-                      </Tooltip>
+                      </Tooltip></PermissionGate>
                     </Stack>
                   </TableCell>
                 </TableRow>

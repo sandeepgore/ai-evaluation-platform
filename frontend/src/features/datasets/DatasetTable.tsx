@@ -5,7 +5,6 @@ import {
 } from "@mui/icons-material";
 import {
   Chip,
-  IconButton,
   Paper,
   Stack,
   Table,
@@ -14,10 +13,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Dataset } from "./api";
 
@@ -127,17 +127,7 @@ export function DatasetTable({
               </TableCell>
 
               <TableCell>
-                <Tooltip title="View dataset versions">
-                  <IconButton
-                    aria-label={`View versions for ${dataset.name}`}
-                    onClick={() => onViewVersions(dataset)}
-                    size="small"
-                    color="primary"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                  >
-                    <LayersOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+              <TableActionButton label={`View versions for ${dataset.name}`} icon={<LayersOutlined fontSize="small" />} onClick={() => onViewVersions(dataset)} />
               </TableCell>
 
               <TableCell align="right">
@@ -146,29 +136,10 @@ export function DatasetTable({
                   spacing={0.5}
                   sx={{ justifyContent: "flex-end", alignItems: "center" }}
                 >
-                  <Tooltip title="Edit dataset">
-                    <IconButton
-                      aria-label={`Edit ${dataset.name}`}
-                      onClick={() => onEdit(dataset)}
-                      size="small"
-                      color="info"
-                      sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    >
-                      <EditOutlined fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-
-                  <Tooltip title="Delete dataset">
-                    <IconButton
-                      aria-label={`Delete ${dataset.name}`}
-                      onClick={() => onDelete(dataset)}
-                      size="small"
-                      color="error"
-                      sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    >
-                      <DeleteOutlined fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+                  <PermissionGate permission="write">
+                    <TableActionButton label={`Edit ${dataset.name}`} icon={<EditOutlined fontSize="small" />} onClick={() => onEdit(dataset)} />
+                    <TableActionButton label={`Delete ${dataset.name}`} icon={<DeleteOutlined fontSize="small" />} destructive onClick={() => onDelete(dataset)} />
+                  </PermissionGate>
                 </Stack>
               </TableCell>
             </TableRow>

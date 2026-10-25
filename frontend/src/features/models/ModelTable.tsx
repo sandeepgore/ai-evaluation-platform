@@ -1,6 +1,5 @@
 import { DeleteOutlined, EditOutlined } from "@mui/icons-material";
 import {
-  IconButton,
   Paper,
   Table,
   TableBody,
@@ -8,10 +7,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Model } from "./api";
 
@@ -46,7 +46,7 @@ const modelTypeLabels: Record<Model["model_type"], string> = {
 export function ModelTable({ models, onEdit, onDelete, sortField = "name", sortDirection = "asc", onSort = () => undefined }: ModelTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
-      <Table>
+      <Table sx={{ minWidth: 1050 }}>
         <TableHead>
           <TableRow>
             <TableCell><DataTableSortLabel field="name" activeField={sortField} direction={sortDirection} label="Model" onSort={onSort} /></TableCell>
@@ -109,29 +109,10 @@ export function ModelTable({ models, onEdit, onDelete, sortField = "name", sortD
               </TableCell>
 
               <TableCell align="right">
-                <Tooltip title="Edit model">
-                  <IconButton
-                    aria-label={`Edit ${model.name}`}
-                    onClick={() => onEdit(model)}
-                    size="small"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    color="info"
-                  >
-                    <EditOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-
-                <Tooltip title="Delete model">
-                  <IconButton
-                    aria-label={`Delete ${model.name}`}
-                    onClick={() => onDelete(model)}
-                    size="small"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    color="error"
-                  >
-                    <DeleteOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <PermissionGate permission="write">
+                  <TableActionButton label={`Edit ${model.name}`} icon={<EditOutlined fontSize="small" />} onClick={() => onEdit(model)} />
+                  <TableActionButton label={`Delete ${model.name}`} icon={<DeleteOutlined fontSize="small" />} destructive onClick={() => onDelete(model)} />
+                </PermissionGate>
               </TableCell>
             </TableRow>
           ))}

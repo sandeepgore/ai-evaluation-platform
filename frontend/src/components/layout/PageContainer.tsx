@@ -12,11 +12,11 @@ export function PageContainer({ children }: PageContainerProps) {
       component="main"
       sx={{
         flex: 1,
-        px: { xs: 2, md: 3 },
-        py: 3,
+        px: { xs: 2, sm: 3 },
+        py: { xs: 2.5, sm: 3 },
       }}
     >
-      <Box sx={{ width: "100%" }}>{children}</Box>
+      <Box sx={{ width: "100%", minWidth: 0 }}>{children}</Box>
     </Container>
   );
 }

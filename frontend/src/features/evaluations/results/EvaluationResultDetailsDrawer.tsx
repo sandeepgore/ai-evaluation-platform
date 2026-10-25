@@ -1,8 +1,8 @@
 import {
   Box,
-  Chip,
-  Divider,
-  Drawer,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Stack,
   Typography,
@@ -11,6 +11,8 @@ import { CloseOutlined } from "@mui/icons-material";
 
 import type { EvaluationResult } from "../api";
 import EvaluationResultJsonSection from "./EvaluationResultJsonSection";
+import EvaluationScores from "./EvaluationScores";
+import { StatusChip } from "../../../components/common/StatusChip";
 
 interface EvaluationResultDetailsDrawerProps {
   result: EvaluationResult | null;
@@ -24,48 +26,31 @@ export default function EvaluationResultDetailsDrawer({
   onClose,
 }: EvaluationResultDetailsDrawerProps) {
   return (
-    <Drawer
-      anchor="right"
-      open={open}
+    <Dialog
+      open={open && result !== null}
       onClose={onClose}
-      slotProps={{
-        paper: {
-          sx: {
-            width: { xs: "100%", sm: 560 },
-            maxWidth: "100%",
-            p: 0,
-          },
-        },
-      }}
+      fullWidth
+      maxWidth="md"
+      scroll="paper"
+      aria-labelledby="evaluation-result-dialog-title"
+      slotProps={{ paper: { sx: { borderRadius: 3, maxHeight: "calc(100% - 32px)" } } }}
     >
       {result && (
-        <Stack spacing={2} sx={{ p: { xs: 2, sm: 3 } }}>
-          <Stack
-            sx={{
-              display: "flex",
-              flexDirection: "row",
-              alignItems: "flex-start",
-              gap: 1,
-            }}
+        <>
+          <DialogTitle
+            id="evaluation-result-dialog-title"
+            sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, pb: 1.5 }}
           >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                Case result
-              </Typography>
-            </Box>
-
-            <IconButton aria-label="Close result details" onClick={onClose}>
+            <Stack spacing={1}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>Case result</Typography>
+              <StatusChip status={result.status} />
+            </Stack>
+            <IconButton aria-label="Close result details" title="Close result details" onClick={onClose}>
               <CloseOutlined />
             </IconButton>
-          </Stack>
-
-          <Chip
-            label={result.status.replaceAll("_", " ")}
-            variant="outlined"
-            sx={{ alignSelf: "flex-start" }}
-          />
-
-          <Divider />
+          </DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2} sx={{ py: 0.5 }}>
 
           {result.error_message && (
             <Box
@@ -92,6 +77,24 @@ export default function EvaluationResultDetailsDrawer({
               </Typography>
             </Box>
           )}
+
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Input
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+                p: 1.5,
+                borderRadius: 1,
+                bgcolor: "action.hover",
+              }}
+            >
+              {result.input || "No input available."}
+            </Typography>
+          </Box>
 
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -138,18 +141,19 @@ export default function EvaluationResultDetailsDrawer({
             </Typography>
           </Box>
 
-          <EvaluationResultJsonSection
-            title="Scores"
-            value={result.scores}
-            defaultExpanded
-          />
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Scores</Typography>
+            <EvaluationScores value={result.scores} />
+          </Box>
 
           <EvaluationResultJsonSection
             title="Execution trace"
             value={result.trace}
           />
-        </Stack>
+            </Stack>
+          </DialogContent>
+        </>
       )}
-    </Drawer>
+    </Dialog>
   );
 }

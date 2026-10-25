@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.config.settings import settings
 from app.db.base import Base
 from app.models.organization import Organization, OrganizationMember
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.project import Project
 from app.models.dataset import Dataset

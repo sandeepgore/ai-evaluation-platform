@@ -1,4 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.api.v1.auth import router as auth_router
+from app.api.v1.audit_logs import router as audit_logs_router
+from app.middleware.auth import enforce_role_access
 
 from app.api.v1.dataset_case import router as dataset_cases_router
 from app.api.v1.dataset_versions import router as dataset_versions_router
@@ -18,16 +22,13 @@ from app.api.v1.projects import router as projects_router
 
 api_router = APIRouter(prefix="/api/v1")
 
-api_router.include_router(organizations_router)
-api_router.include_router(projects_router)
-api_router.include_router(models_router)
-api_router.include_router(datasets_router)
-api_router.include_router(dataset_versions_router)
-api_router.include_router(dataset_cases_router)
-api_router.include_router(evaluation_router)
-api_router.include_router(evaluation_schedules_router)
-api_router.include_router(run_logs_router)
-api_router.include_router(scheduler_logs_router)
-api_router.include_router(evaluation_results_router)
-api_router.include_router(evaluators_router)
-api_router.include_router(experiments_router)
+api_router.include_router(auth_router)
+api_router.include_router(audit_logs_router)
+
+for protected_router in (
+    organizations_router, projects_router, models_router, datasets_router,
+    dataset_versions_router, dataset_cases_router, evaluation_router,
+    evaluation_schedules_router, run_logs_router, scheduler_logs_router,
+    evaluation_results_router, evaluators_router, experiments_router,
+):
+    api_router.include_router(protected_router, dependencies=[Depends(enforce_role_access)])

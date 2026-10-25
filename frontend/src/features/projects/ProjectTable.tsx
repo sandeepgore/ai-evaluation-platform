@@ -1,6 +1,5 @@
 import { DeleteOutlined, EditOutlined } from "@mui/icons-material";
 import {
-  IconButton,
   Paper,
   Table,
   TableBody,
@@ -8,10 +7,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Project } from "./api";
 
@@ -34,7 +34,7 @@ export function ProjectTable({
 }: ProjectTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
-      <Table>
+      <Table sx={{ minWidth: 900 }}>
         <TableHead>
           <TableRow>
             <TableCell><DataTableSortLabel field="name" activeField={sortField} direction={sortDirection} label="Project" onSort={onSort} /></TableCell>
@@ -84,29 +84,10 @@ export function ProjectTable({
               </TableCell>
 
               <TableCell align="right">
-                <Tooltip title="Edit project">
-                  <IconButton
-                    aria-label={`Edit ${project.name}`}
-                    onClick={() => onEdit(project)}
-                    size="small"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    color="info"
-                  >
-                    <EditOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-
-                <Tooltip title="Delete project">
-                  <IconButton
-                    aria-label={`Delete ${project.name}`}
-                    onClick={() => onDelete(project)}
-                    size="small"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    color="error"
-                  >
-                    <DeleteOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <PermissionGate permission="write">
+                  <TableActionButton label={`Edit ${project.name}`} icon={<EditOutlined fontSize="small" />} onClick={() => onEdit(project)} />
+                  <TableActionButton label={`Delete ${project.name}`} icon={<DeleteOutlined fontSize="small" />} destructive onClick={() => onDelete(project)} />
+                </PermissionGate>
               </TableCell>
             </TableRow>
           ))}

@@ -24,6 +24,7 @@ export interface ExperimentSnapshotRun {
     total_cases: number;
     completed_cases: number;
     failed_cases: number;
+    not_applicable_cases?: number;
     duration_ms: number | null;
   };
   summary: {

@@ -1,16 +1,31 @@
-import { AccountCircleOutlined, MenuOutlined } from "@mui/icons-material";
+import {
+  AccountCircleOutlined,
+  DarkModeOutlined,
+  LightModeOutlined,
+  LogoutOutlined,
+  ManageAccountsOutlined,
+  MenuOutlined,
+} from "@mui/icons-material";
+import { useContext, useState } from "react";
 import {
   AppBar,
   Box,
   Divider,
   IconButton,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
   Toolbar,
+  Tooltip,
   Typography,
 } from "@mui/material";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useOrganizations } from "../../features/organizations/hooks";
 import { useProjects } from "../../features/projects/hooks";
 import { useAppContextStore } from "../../store/appContextStore";
+import { useAuthStore } from "../../store/authStore";
+import { ColorModeContext } from "../../app/ColorModeContext";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -27,6 +42,10 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
+  const { mode, toggleColorMode } = useContext(ColorModeContext);
+  const [accountAnchor, setAccountAnchor] = useState<HTMLElement | null>(null);
+  const user = useAuthStore((state) => state.user);
+  const clearSession = useAuthStore((state) => state.clearSession);
   const location = useLocation();
   const title = pageTitles[location.pathname] ?? "AI Evaluation Platform";
 
@@ -48,6 +67,8 @@ export function Header({ onMenuClick }: HeaderProps) {
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId,
   );
+  const accountName = user?.full_name || user?.email || "Account";
+  const closeAccountMenu = () => setAccountAnchor(null);
 
   return (
     <AppBar
@@ -69,6 +90,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       >
         <IconButton
           aria-label="open navigation"
+          title="Open navigation"
           onClick={onMenuClick}
           sx={{
             display: { xs: "inline-flex", lg: "none" },
@@ -149,14 +171,62 @@ export function Header({ onMenuClick }: HeaderProps) {
           }}
         />
 
-        <IconButton
-          aria-label="account"
-          sx={{
-            color: "text.secondary",
-          }}
+        <Tooltip title={`Switch to ${mode === "light" ? "dark" : "light"} mode`}>
+          <IconButton
+            aria-label={`Switch to ${mode === "light" ? "dark" : "light"} mode`}
+            onClick={toggleColorMode}
+            color="inherit"
+          >
+            {mode === "light" ? <DarkModeOutlined /> : <LightModeOutlined />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Account menu">
+          <IconButton
+            aria-label="Open account menu"
+            aria-haspopup="true"
+            aria-expanded={Boolean(accountAnchor)}
+            onClick={(event) => setAccountAnchor(event.currentTarget)}
+            color="inherit"
+          >
+            <AccountCircleOutlined />
+          </IconButton>
+        </Tooltip>
+        <Menu
+          anchorEl={accountAnchor}
+          open={Boolean(accountAnchor)}
+          onClose={closeAccountMenu}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+          slotProps={{ paper: { sx: { minWidth: 220, mt: 1 } } }}
         >
-          <AccountCircleOutlined />
-        </IconButton>
+          <Box sx={{ px: 2, py: 1.25 }}>
+            <Typography variant="body2" fontWeight={700} noWrap>
+              {accountName}
+            </Typography>
+            {user?.full_name && (
+              <Typography variant="caption" color="text.secondary" noWrap display="block">
+                {user.email}
+              </Typography>
+            )}
+            {user?.role && (
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: "capitalize" }}>
+                {user.role}
+              </Typography>
+            )}
+          </Box>
+          <Divider />
+          {user?.role === "admin" && (
+            <MenuItem component={Link} to="/admin/users" onClick={closeAccountMenu}>
+              <ListItemIcon><ManageAccountsOutlined fontSize="small" /></ListItemIcon>
+              <ListItemText>User access</ListItemText>
+            </MenuItem>
+          )}
+          {user?.role === "admin" && <Divider />}
+          <MenuItem onClick={() => { closeAccountMenu(); clearSession(); }}>
+            <ListItemIcon><LogoutOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Sign out</ListItemText>
+          </MenuItem>
+        </Menu>
       </Toolbar>
     </AppBar>
   );

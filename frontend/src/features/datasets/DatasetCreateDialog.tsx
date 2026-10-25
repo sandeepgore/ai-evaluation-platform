@@ -95,6 +95,7 @@ export function DatasetCreateDialog({
 
         <IconButton
           aria-label="close"
+          title="Close create dataset dialog"
           onClick={handleClose}
           disabled={createMutation.isPending}
           size="small"

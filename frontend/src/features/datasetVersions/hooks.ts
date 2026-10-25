@@ -10,6 +10,7 @@ import {
   finalizeDatasetVersion,
   getDatasetVersion,
   importDataset,
+  importDatasetFile,
   listDatasetVersions,
   updateDatasetVersion,
   type CreateDatasetVersionPayload,
@@ -160,10 +161,12 @@ export function useImportDataset() {
     mutationFn: ({
       datasetId,
       payload,
+      filename,
     }: {
       datasetId: string;
       payload: DatasetImportPayload;
-    }) => importDataset(datasetId, payload),
+      filename?: string;
+    }) => importDataset(datasetId, payload, filename),
 
     onSuccess: (version) => {
       void queryClient.invalidateQueries({
@@ -175,6 +178,24 @@ export function useImportDataset() {
       if (error instanceof Error) {
         notify(error.message, "error");
       }
+    },
+  });
+}
+
+export function useImportDatasetFile() {
+  const queryClient = useQueryClient();
+  const { notify } = useNotification();
+
+  return useMutation({
+    mutationFn: ({ datasetId, file }: { datasetId: string; file: File }) =>
+      importDatasetFile(datasetId, file),
+    onSuccess: (version) => {
+      void queryClient.invalidateQueries({
+        queryKey: datasetVersionKeys.list(version.dataset_id),
+      });
+    },
+    onError: (error) => {
+      if (error instanceof Error) notify(error.message, "error");
     },
   });
 }

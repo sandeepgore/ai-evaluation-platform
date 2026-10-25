@@ -1,3 +1,4 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
 import { AddOutlined, DownloadOutlined, SearchOutlined } from "@mui/icons-material";
 import {
   Box,
@@ -14,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 
 import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { downloadBlob } from "../../components/common/downloadBlob";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
@@ -31,6 +33,7 @@ import {
 import { useEvaluationRuns, useSchedulerLogsAvailability } from "./hooks";
 
 const DEFAULT_PAGE_SIZE = 25;
+
 
 export function EvaluationListPage() {
   const navigate = useNavigate();
@@ -195,6 +198,7 @@ export function EvaluationListPage() {
   }
 
   return (
+    <ScreenWithActivity screen="evaluations">
     <Stack spacing={3}>
       <AppBreadcrumbs items={[{ label: "Evaluations" }]} />
       {/* Header Section */}
@@ -241,7 +245,7 @@ export function EvaluationListPage() {
           >
             {isDownloadingSchedulerLogs ? "Preparing logs..." : "Scheduler logs"}
           </Button>
-          <Button
+          <PermissionGate permission="write"><Button
             variant="contained"
             disableElevation
             startIcon={<AddOutlined />}
@@ -254,7 +258,7 @@ export function EvaluationListPage() {
             }}
           >
             Create Evaluation
-          </Button>
+          </Button></PermissionGate>
         </Stack>
       </Stack>
 
@@ -273,7 +277,7 @@ export function EvaluationListPage() {
             description="Create your first evaluation run to benchmark and score model responses."
           />
 
-          <Button
+          <PermissionGate permission="write"><Button
             variant="outlined"
             startIcon={<AddOutlined />}
             onClick={handleCreate}
@@ -285,7 +289,7 @@ export function EvaluationListPage() {
             }}
           >
             Create First Evaluation
-          </Button>
+          </Button></PermissionGate>
         </Paper>
       ) : (
         <Paper
@@ -368,5 +372,6 @@ export function EvaluationListPage() {
         </Paper>
       )}
     </Stack>
+      </ScreenWithActivity>
   );
 }

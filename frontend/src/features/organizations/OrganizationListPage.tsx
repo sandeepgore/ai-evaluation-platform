@@ -1,3 +1,5 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { AddOutlined } from "@mui/icons-material";
 import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import { useMemo, useState } from "react";
@@ -12,6 +14,7 @@ import { useOrganizations } from "./hooks";
 import { OrganizationCreateDialog } from "./OrganizationCreateDialog";
 import { OrganizationEditDialog } from "./OrganizationEditDialog";
 import { OrganizationDeleteDialog } from "./OrganizationDeleteDialog";
+
 
 export function OrganizationListPage() {
   const { data, isLoading, isError } = useOrganizations();
@@ -53,6 +56,7 @@ export function OrganizationListPage() {
   }
 
   return (
+    <ScreenWithActivity screen="organizations">
     <Stack spacing={3}>
       <AppBreadcrumbs items={[{ label: "Organizations" }]} />
       <Stack
@@ -73,13 +77,13 @@ export function OrganizationListPage() {
           </Typography>
         </Stack>
 
-        <Button
+        <PermissionGate permission="admin"><Button
           variant="contained"
           startIcon={<AddOutlined />}
           onClick={() => setCreateOpen(true)}
         >
           Create Organization
-        </Button>
+        </Button></PermissionGate>
       </Stack>
 
       {!data || data.length === 0 ? (
@@ -117,5 +121,6 @@ export function OrganizationListPage() {
         onClose={() => setDeleteOrganization(null)}
       />
     </Stack>
+      </ScreenWithActivity>
   );
 }

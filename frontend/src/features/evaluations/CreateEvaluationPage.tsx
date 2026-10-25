@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { PlayCircleOutlined } from "@mui/icons-material";
+import { ExpandMoreOutlined, PlayCircleOutlined } from "@mui/icons-material";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
   Checkbox,
   CircularProgress,
-  Divider,
   FormControlLabel,
   MenuItem,
   Paper,
@@ -158,10 +160,6 @@ export function CreateEvaluationPage() {
   }, [activeModels, modelId]);
 
   const isLoading = isDatasetsLoading || isModelsLoading;
-
-  const selectedType = EVALUATION_TYPES.find(
-    (type) => type.value === evaluationType,
-  );
 
   const availableEvaluators = (evaluators ?? []).filter(
     (evaluator) =>
@@ -389,20 +387,21 @@ export function CreateEvaluationPage() {
         onSubmit={handleSubmit}
         sx={{ p: { xs: 2, sm: 4 }, borderRadius: 3 }}
       >
-        <Stack spacing={3}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Evaluation Configuration
-          </Typography>
-
+        <Stack spacing={2.5}>
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              When should this evaluation run?
+              Run timing
             </Typography>
             <RadioGroup
               row
               value={runTiming}
               onChange={(event) => setRunTiming(event.target.value as "now" | "scheduled")}
-              sx={{ mt: 0.5 }}
+              sx={{
+                mt: 0.5,
+                columnGap: 2,
+                rowGap: 0.5,
+                "& .MuiFormControlLabel-root": { m: 0, gap: 0.5 },
+              }}
             >
               <FormControlLabel value="now" control={<Radio />} label="Run now" />
               <FormControlLabel value="scheduled" control={<Radio />} label="Schedule" />
@@ -452,6 +451,14 @@ export function CreateEvaluationPage() {
             )}
           </Box>
 
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+              gap: 2,
+              alignItems: "start",
+            }}
+          >
           <TextField
             label="Evaluation Name"
             value={name}
@@ -463,8 +470,25 @@ export function CreateEvaluationPage() {
                 maxLength: 150,
               },
             }}
-            helperText="Choose a name that identifies this evaluation run."
+            helperText=" "
           />
+
+          <TextField
+            select
+            label="Model"
+            value={modelId}
+            onChange={(event) => setModelId(event.target.value)}
+            required
+            fullWidth
+            disabled={activeModels.length === 0}
+            helperText=" "
+          >
+            {activeModels.map((model) => (
+              <MenuItem key={model.id} value={model.id}>
+                {model.name} — {model.provider}
+              </MenuItem>
+            ))}
+          </TextField>
 
           <TextField
             select
@@ -474,7 +498,7 @@ export function CreateEvaluationPage() {
             required
             fullWidth
             disabled={activeDatasets.length === 0}
-            helperText="Choose an active dataset from the selected project."
+            helperText=" "
           >
             {activeDatasets.map((dataset) => (
               <MenuItem key={dataset.id} value={dataset.id}>
@@ -493,14 +517,14 @@ export function CreateEvaluationPage() {
             disabled={!datasetId || isVersionsLoading || isVersionsError}
             helperText={
               !datasetId
-                ? "Select a dataset first."
+                ? "Choose a dataset first."
                 : isVersionsLoading
-                  ? "Loading dataset versions..."
+                  ? "Loading versions..."
                   : isVersionsError
-                    ? "Unable to load versions. Please try again."
+                    ? "Could not load versions."
                     : readyVersions.length === 0
-                      ? "No active, finalized versions are available."
-                      : "Only active, finalized versions are selectable."
+                      ? "No active finalized versions."
+                      : "Active finalized versions only."
             }
           >
             {readyVersions.map((version) => (
@@ -509,24 +533,6 @@ export function CreateEvaluationPage() {
               </MenuItem>
             ))}
           </TextField>
-
-          <TextField
-            select
-            label="Model"
-            value={modelId}
-            onChange={(event) => setModelId(event.target.value)}
-            required
-            fullWidth
-            disabled={activeModels.length === 0}
-            helperText="Choose an active model from the selected project."
-          >
-            {activeModels.map((model) => (
-              <MenuItem key={model.id} value={model.id}>
-                {model.name} — {model.provider}
-              </MenuItem>
-            ))}
-          </TextField>
-
           <TextField
             select
             label="Evaluation Type"
@@ -536,6 +542,7 @@ export function CreateEvaluationPage() {
             }
             required
             fullWidth
+            helperText=" "
           >
             {EVALUATION_TYPES.map((type) => (
               <MenuItem key={type.value} value={type.value}>
@@ -543,19 +550,9 @@ export function CreateEvaluationPage() {
               </MenuItem>
             ))}
           </TextField>
-
-          {selectedType && (
-            <Alert severity="info" icon={false}>
-              {selectedType.description}
-            </Alert>
-          )}
-
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
               Evaluation mode
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Use the recommended evaluator set or configure evaluators and execution options yourself.
             </Typography>
             <RadioGroup
               row
@@ -566,7 +563,7 @@ export function CreateEvaluationPage() {
               <FormControlLabel
                 value="default"
                 control={<Radio />}
-                label="Default"
+                label="Default (recommended)"
                 sx={{ mr: 3 }}
               />
               <FormControlLabel
@@ -576,10 +573,22 @@ export function CreateEvaluationPage() {
               />
             </RadioGroup>
           </Box>
-
-          <Divider />
-
-          <Stack spacing={2}>
+          </Box>
+          <Accordion disableGutters variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", "&:before": { display: "none" } }}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreOutlined />}
+              sx={{ minHeight: 64, px: 2.5, "&.Mui-expanded": { minHeight: 64 }, "& .MuiAccordionSummary-content": { my: 1.5 }, "& .MuiAccordionSummary-content.Mui-expanded": { my: 1.5 } }}
+            >
+              <Box>
+                <Typography variant="body2" fontWeight={600}>Optional settings</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                  Missing-data policy and prompt overrides
+                </Typography>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: { xs: 2, sm: 2.5 }, pt: 0.5, pb: 2.5 }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2.5, alignItems: "start" }}>
+          <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Data policy
@@ -612,15 +621,13 @@ export function CreateEvaluationPage() {
             )}
           </Stack>
 
-          <Divider />
-
-          <Stack spacing={2}>
+          <Stack spacing={2.5} sx={{ gridColumn: promptChoice === "dataset" ? undefined : "1 / -1" }}>
             <Box>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Prompt
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Choose the prompt sent to the model for each dataset case.
+                Choose how each dataset case is formatted before it is sent to the model.
               </Typography>
             </Box>
             <TextField
@@ -647,7 +654,7 @@ export function CreateEvaluationPage() {
               />
             )}
             {promptChoice === "template" && (
-              <Stack spacing={2}>
+              <Stack spacing={2.5}>
                 <TextField
                   label="System prompt"
                   value={systemPrompt}
@@ -671,36 +678,25 @@ export function CreateEvaluationPage() {
               </Stack>
             )}
           </Stack>
+          </Box>
+            </AccordionDetails>
+          </Accordion>
 
           {mode === "advanced" && (
-            <>
-              <Divider />
-              <Stack spacing={2}>
+            <Accordion disableGutters variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", "&:before": { display: "none" } }}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreOutlined />}
+              sx={{ minHeight: 64, px: 2.5, "&.Mui-expanded": { minHeight: 64 }, "& .MuiAccordionSummary-content": { my: 1.5 }, "& .MuiAccordionSummary-content.Mui-expanded": { my: 1.5 } }}
+            >
                 <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    Advanced configuration
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    Select the metrics available for the chosen evaluation type, then optionally tune their weights, execution, and judge model.
+                  <Typography variant="body2" fontWeight={600}>Advanced options</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                    Choose metrics and execution settings · {availableEvaluators.length} available metrics
                   </Typography>
                 </Box>
-
-                <Box
-                  sx={{
-                    px: 1.5,
-                    py: 1,
-                    borderRadius: 1.5,
-                    bgcolor: "action.hover",
-                  }}
-                >
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    Available metrics: {selectedType?.label ?? evaluationType}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {availableEvaluators.length} applicable {availableEvaluators.length === 1 ? "metric" : "metrics"}. Change the Evaluation Type above to update this list.
-                  </Typography>
-                </Box>
-
+              </AccordionSummary>
+              <AccordionDetails sx={{ px: { xs: 2, sm: 2.5 }, pt: 0.5, pb: 2.5 }}>
+              <Stack spacing={2.5}>
                 {isEvaluatorsLoading && (
                   <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                     <CircularProgress size={18} />
@@ -720,11 +716,11 @@ export function CreateEvaluationPage() {
                   </Alert>
                 )}
                 {availableEvaluators.length > 0 && (
-                  <Stack spacing={1}>
+                  <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
                     {availableEvaluators.map((evaluator) => {
                       const checked = selectedEvaluators.includes(evaluator.name);
                       return (
-                        <Paper key={evaluator.name} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                        <Paper key={evaluator.name} variant="outlined" sx={{ p: 2, borderRadius: 2, height: "100%" }}>
                           <Stack
                             direction={{ xs: "column", sm: "row" }}
                             spacing={1}
@@ -778,9 +774,10 @@ export function CreateEvaluationPage() {
                         </Paper>
                       );
                     })}
-                  </Stack>
+                  </Box>
                 )}
 
+                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2.5, alignItems: "start" }}>
                 <TextField
                   select
                   label="Execution strategy"
@@ -816,8 +813,10 @@ export function CreateEvaluationPage() {
                     </MenuItem>
                   ))}
                 </TextField>
+                </Box>
               </Stack>
-            </>
+              </AccordionDetails>
+            </Accordion>
           )}
 
           <Stack

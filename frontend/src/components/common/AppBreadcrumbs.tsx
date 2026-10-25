@@ -15,6 +15,9 @@ interface AppBreadcrumbsProps {
 }
 
 export function AppBreadcrumbs({ items }: AppBreadcrumbsProps) {
+  const ancestors = items.slice(0, -1);
+  if (ancestors.length === 0) return null;
+
   return (
     <Breadcrumbs
       aria-label="breadcrumb"
@@ -24,18 +27,14 @@ export function AppBreadcrumbs({ items }: AppBreadcrumbsProps) {
         },
       }}
     >
-      {items.map((item, index) => {
-        const isLast = index === items.length - 1;
-
-        if (isLast || !item.to) {
+      {ancestors.map((item, index) => {
+        if (!item.to) {
           return (
             <Typography
               key={`${item.label}-${index}`}
               variant="body2"
-              color={isLast ? "text.primary" : "text.secondary"}
-              sx={{
-                fontWeight: isLast ? 600 : 500,
-              }}
+              color="text.secondary"
+              sx={{ fontWeight: 500 }}
             >
               {item.label}
             </Typography>

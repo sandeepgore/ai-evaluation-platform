@@ -81,7 +81,13 @@ async def get_evaluation_result(
             detail="Evaluation result not found",
         )
 
-    return result
+    return EvaluationResultResponse.model_validate(result).model_copy(
+        update={
+            "input": await EvaluationResultService.get_case_input(
+                db, result.dataset_case_id
+            )
+        }
+    )
 
 
 @router.delete(
