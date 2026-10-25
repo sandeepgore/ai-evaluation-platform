@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { DatasetListPage } from "../features/datasets/DatasetListPage";
@@ -16,6 +16,30 @@ import { EvaluationSummaryPage } from "../features/evaluations/EvaluationSummary
 import EvaluationResultsPage from "../features/evaluations/EvaluationResultsPage";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
+import { LoginPage } from "../features/auth/LoginPage";
+import { UserAccessPage } from "../features/auth/UserAccessPage";
+import { AuditLogsPage } from "../features/auditLogs/AuditLogsPage";
+import { useAuthStore } from "../store/authStore";
+
+function RequireAuth() {
+  const token = useAuthStore((state) => state.token);
+  const location = useLocation();
+  return token ? <Outlet /> : <Navigate to="/login" replace state={{ from: location.pathname }} />;
+}
+
+function RequireAdmin() {
+  const role = useAuthStore((state) => state.user?.role);
+  return role === "admin" ? <Outlet /> : <Navigate to="/" replace />;
+}
+
+function RequireWriteAccess() {
+  const role = useAuthStore((state) => state.user?.role);
+  return role === "admin" || role === "dev" ? <Outlet /> : <Navigate to="/" replace />;
+}
+
+function AuthenticatedShell() {
+  return <AppShell />;
+}
 
 const ExperimentListPage = lazy(() =>
   import("../features/experiments/ExperimentListPage").then((module) => ({
@@ -71,7 +95,16 @@ class ExperimentsErrorBoundary extends Component<
 export function AppRoutes() {
   return (
     <Routes>
-      <Route element={<AppShell />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RequireAuth />}>
+      <Route element={<AuthenticatedShell />}>
+        <Route element={<RequireAdmin />}>
+        <Route path="/admin/users" element={<UserAccessPage />} />
+        <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
+        </Route>
+        <Route element={<RequireWriteAccess />}>
+          <Route path="/evaluations/new" element={<CreateEvaluationPage />} />
+        </Route>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/organizations" element={<OrganizationListPage />} />
         <Route path="/projects" element={<ProjectListPage />} />
@@ -90,7 +123,6 @@ export function AppRoutes() {
         />
         <Route path="/models" element={<ModelListPage />} />
         <Route path="/evaluations" element={<EvaluationListPage />} />
-        <Route path="/evaluations/new" element={<CreateEvaluationPage />} />
         <Route
           path="/evaluations/:evaluationId/summary"
           element={<EvaluationSummaryPage />}
@@ -112,6 +144,7 @@ export function AppRoutes() {
           element={<ExperimentsRoute page="detail" />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
       </Route>
     </Routes>
   );

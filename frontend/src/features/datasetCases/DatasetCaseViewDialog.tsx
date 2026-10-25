@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -102,24 +101,11 @@ export function DatasetCaseViewDialog({
           >
             Dataset Case Details
           </Typography>
-          {datasetCase?.id && (
-            <Chip
-              label={`ID: ${datasetCase.id}`}
-              size="small"
-              sx={{
-                fontFamily: "monospace",
-                fontSize: "0.75rem",
-                bgcolor: alpha(theme.palette.primary.main, 0.08),
-                color: theme.palette.primary.main,
-                fontWeight: 600,
-                border: "none",
-              }}
-            />
-          )}
         </Stack>
 
         <IconButton
           aria-label="close"
+          title="Close dataset case details"
           onClick={onClose}
           size="small"
           sx={{

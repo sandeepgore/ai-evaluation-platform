@@ -128,6 +128,7 @@ class ExperimentService:
                     "total_cases": run.total_cases,
                     "completed_cases": run.completed_cases,
                     "failed_cases": run.failed_cases,
+                    "not_applicable_cases": run.not_applicable_cases,
                     "duration_ms": run.duration_ms,
                 },
                 "summary": {

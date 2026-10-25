@@ -40,6 +40,18 @@ This platform provides a unified solution for AI quality management.
 
 # Architecture
 
+## Authentication and roles
+
+The API uses bearer access tokens. Configure `AUTH_SECRET_KEY` with a long random value and set `ACCESS_TOKEN_EXPIRE_MINUTES` before deployment. Apply database migrations with `alembic upgrade head` before starting the application.
+
+Create the first account through the frontend registration form; the first registered account becomes the initial administrator, and later registrations receive the `user` role. Administrators can assign `admin`, `dev`, or `user` from **User access** in the app. `user` accounts have read-only API access, `dev` accounts can modify platform resources, and organization changes and user-role management require `admin`.
+
+The frontend stores the bearer token in browser local storage. For production, serve the frontend and API over HTTPS and use a unique signing secret.
+
+Successful and failed write requests, sign-ins, and registrations are recorded in `audit_logs`. Administrators can review the latest events from **Audit log**; role changes include the old and new roles. Request bodies, passwords, and tokens are never stored in audit records.
+
+---
+
 ```
                          Users
 

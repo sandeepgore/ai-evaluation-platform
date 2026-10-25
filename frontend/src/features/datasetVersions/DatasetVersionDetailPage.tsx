@@ -15,7 +15,6 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
   Divider,
   Grid,
   LinearProgress,
@@ -32,6 +31,7 @@ import { ErrorState } from "../../components/common/ErrorState";
 import { LoadingState } from "../../components/common/LoadingState";
 import { useDataset } from "../datasets/hooks";
 import { DatasetVersionStatusChip } from "./DatasetVersionStatusChip";
+import { StatusChip } from "../../components/common/StatusChip";
 import { useDatasetVersion } from "./hooks";
 
 export function DatasetVersionDetailPage() {
@@ -470,17 +470,7 @@ export function DatasetVersionDetailPage() {
                     >
                       PROMPT INPUT
                     </Typography>
-                    <Chip
-                      label={hasEvaluationData ? "Ready" : "Empty"}
-                      size="small"
-                      color={hasEvaluationData ? "success" : "default"}
-                      variant="outlined"
-                      sx={{
-                        height: 20,
-                        fontSize: "0.6875rem",
-                        fontWeight: 700,
-                      }}
-                    />
+                    <StatusChip status={hasEvaluationData ? "ready" : "empty"} />
                   </Stack>
 
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
@@ -517,17 +507,7 @@ export function DatasetVersionDetailPage() {
                     >
                       EXPECTED OUTPUT
                     </Typography>
-                    <Chip
-                      label={referenceCount > 0 ? "Available" : "Optional"}
-                      size="small"
-                      color={referenceCount > 0 ? "primary" : "default"}
-                      variant="outlined"
-                      sx={{
-                        height: 20,
-                        fontSize: "0.6875rem",
-                        fontWeight: 700,
-                      }}
-                    />
+                    <StatusChip status={referenceCount > 0 ? "available" : "optional"} />
                   </Stack>
 
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>

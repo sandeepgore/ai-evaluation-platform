@@ -1,6 +1,5 @@
 import {
   AssessmentOutlined,
-  AutoAwesomeOutlined,
   BusinessOutlined,
   DatasetOutlined,
   FolderOutlined,
@@ -10,6 +9,7 @@ import {
 } from "@mui/icons-material";
 import {
   alpha,
+  Button,
   Box,
   Card,
   CardActionArea,
@@ -17,22 +17,26 @@ import {
   Chip,
   FormControl,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Select,
   Stack,
   Typography,
   useTheme,
 } from "@mui/material";
+import { useQueries } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 
-import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
 import { useAppContextStore } from "../../store/appContextStore";
 import { useOrganizations } from "../organizations/hooks";
 import { useProjects } from "../projects/hooks";
 import { useDatasets } from "../datasets/hooks";
+import { listDatasetVersions } from "../datasetVersions/api";
 import { useModels } from "../models/hooks";
 import { useEvaluationRuns } from "../evaluations/hooks";
 import { useExperiments } from "../experiments/hooks";
+import { EvaluationCharts } from "./EvaluationCharts";
+import { StatusChip } from "../../components/common/StatusChip";
 
 export function DashboardPage() {
   const theme = useTheme();
@@ -60,6 +64,13 @@ export function DashboardPage() {
   const { data: datasets = [], isLoading: isDatasetsLoading } = useDatasets(
     selectedProjectId,
   );
+  const datasetVersionQueries = useQueries({
+    queries: datasets.map((dataset) => ({
+      queryKey: ["datasetVersions", "list", dataset.id],
+      queryFn: () => listDatasetVersions(dataset.id),
+      enabled: Boolean(selectedProjectId),
+    })),
+  });
   const { data: models = [], isLoading: isModelsLoading } = useModels(
     selectedProjectId,
   );
@@ -67,12 +78,31 @@ export function DashboardPage() {
     useEvaluationRuns({ projectId: selectedProjectId });
   const { data: experiments = [], isLoading: isExperimentsLoading } =
     useExperiments("all", selectedProjectId);
-  const selectedOrganization = organizations.find(
-    (organization) => organization.id === selectedOrganizationId,
-  );
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId,
   );
+  const completedRuns = evaluationRuns.filter((run) => run.status === "completed").length;
+  const processedCases = evaluationRuns.reduce(
+    (total, run) => total + run.completed_cases + run.failed_cases + run.not_applicable_cases,
+    0,
+  );
+  const totalCases = evaluationRuns.reduce((total, run) => total + run.total_cases, 0);
+  const failedCases = evaluationRuns.reduce((total, run) => total + run.failed_cases, 0);
+  const caseProgress = totalCases > 0 ? Math.min(100, (processedCases / totalCases) * 100) : 0;
+  const activeDatasetVersions = datasetVersionQueries.flatMap((query) => query.data ?? []);
+  const isDatasetInventoryLoading = isDatasetsLoading || datasetVersionQueries.some((query) => query.isLoading);
+  const hasDatasetInventoryError = datasetVersionQueries.some((query) => query.isError);
+  const activeVersionCaseCount = activeDatasetVersions
+    .filter((version) => version.is_active)
+    .reduce((total, version) => total + version.case_count, 0);
+  const recentRuns = [...evaluationRuns]
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .slice(0, 5);
+  const recentExperiments = [...experiments]
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .slice(0, 4);
+  const activeExperimentCount = experiments.filter((experiment) => experiment.is_active).length;
+  const modelNames = Object.fromEntries(models.map((model) => [model.id, model.name]));
 
   const panelBorder = alpha(
     theme.palette.text.primary,
@@ -137,14 +167,12 @@ export function DashboardPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <AppBreadcrumbs items={[{ label: "Dashboard" }]} />
-
       <Stack spacing={0.75}>
         <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: -0.5 }}>
           Dashboard
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Your workspace for managing datasets, models, and evaluations.
+          Track evaluation runs, dataset coverage, models, and experiment comparisons for your project.
         </Typography>
       </Stack>
 
@@ -224,83 +252,136 @@ export function DashboardPage() {
         </CardContent>
       </Card>
 
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "repeat(3, minmax(0, 1fr))" },
-          gap: 2,
-        }}
-      >
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", xl: "repeat(4, minmax(0, 1fr))" }, gap: 2 }}>
         {[
-          {
-            label: "Organizations",
-            value: organizations.length,
-            detail: "Available to your account",
-            icon: BusinessOutlined,
-            color: theme.palette.primary.main,
-          },
-          {
-            label: "Projects",
-            value: projects.length,
-            detail: selectedOrganization?.name ?? "Select an organization",
-            icon: FolderOutlined,
-            color: theme.palette.info.main,
-          },
-          {
-            label: "Current project",
-            value: selectedProject?.name ?? "Not selected",
-            detail: selectedOrganization?.name ?? "Choose a workspace above",
-            icon: AutoAwesomeOutlined,
-            color: theme.palette.success.main,
-          },
-        ].map((item) => {
-          const Icon = item.icon;
-          return (
-            <Card
-              key={item.label}
-              variant="outlined"
-              sx={{ borderColor: panelBorder, borderRadius: 3, height: "100%" }}
-            >
-              <CardContent sx={{ p: 2.5 }}>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      {item.label}
-                    </Typography>
-                    <Typography
-                      variant={typeof item.value === "number" ? "h4" : "h6"}
-                      sx={{ fontWeight: 700, overflowWrap: "anywhere" }}
-                    >
-                      {item.value}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: "block", mt: 0.75, overflowWrap: "anywhere" }}
-                    >
-                      {item.detail}
-                    </Typography>
-                  </Box>
-                  <Box
-                    sx={{
-                      flex: "0 0 auto",
-                      width: 42,
-                      height: 42,
-                      borderRadius: 2,
-                      display: "grid",
-                      placeItems: "center",
-                      color: item.color,
-                      bgcolor: alpha(item.color, 0.1),
-                    }}
-                  >
-                    <Icon />
-                  </Box>
-                </Stack>
+          { label: "Evaluation runs", value: isEvaluationsLoading ? "…" : selectedProjectId ? evaluationRuns.length : "—", detail: selectedProject?.name ?? "Select a project", progress: null as number | null },
+          { label: "Completed runs", value: isEvaluationsLoading ? "…" : selectedProjectId ? completedRuns : "—", detail: selectedProjectId ? "Finished evaluations" : "Select a project", progress: null as number | null },
+          { label: "Cases processed", value: isEvaluationsLoading ? "…" : selectedProjectId ? `${processedCases} / ${totalCases}` : "—", detail: selectedProjectId ? `${caseProgress.toFixed(0)}% of all run cases` : "Select a project", progress: caseProgress },
+          { label: "Failed cases", value: isEvaluationsLoading ? "…" : selectedProjectId ? failedCases : "—", detail: selectedProjectId ? "Across evaluation runs" : "Select a project", progress: null as number | null },
+        ].map((item) => (
+          <Card key={item.label} variant="outlined" sx={{ borderColor: panelBorder, borderRadius: 3, minWidth: 0, height: "100%" }}>
+            <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+              <Typography variant="body2" color="text.secondary">{item.label}</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 700, mt: 0.75, overflowWrap: "anywhere" }}>{item.value}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>{item.detail}</Typography>
+              {item.progress !== null && <LinearProgress variant="determinate" value={selectedProjectId && !isEvaluationsLoading ? item.progress : 0} sx={{ mt: 1.5, height: 6, borderRadius: 3 }} />}
+            </CardContent>
+          </Card>
+        ))}
+      </Box>
+
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h6" fontWeight={700}>Datasets and models</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Inventory and test case coverage for {selectedProject?.name ?? "the selected project"}.
+          </Typography>
+        </Box>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", xl: "repeat(4, minmax(0, 1fr))" }, gap: 2 }}>
+          {[
+            { label: "Datasets", value: isDatasetsLoading ? "…" : selectedProjectId ? datasets.filter((dataset) => dataset.is_active).length : "—", detail: "Active datasets" },
+            { label: "Dataset versions", value: isDatasetInventoryLoading ? "…" : hasDatasetInventoryError ? "—" : selectedProjectId ? activeDatasetVersions.filter((version) => version.is_active).length : "—", detail: hasDatasetInventoryError ? "Version summary unavailable" : "Active versions" },
+            { label: "Dataset cases", value: isDatasetInventoryLoading ? "…" : hasDatasetInventoryError ? "—" : selectedProjectId ? activeVersionCaseCount : "—", detail: "Cases in active versions" },
+            { label: "Models", value: isModelsLoading ? "…" : selectedProjectId ? models.filter((model) => model.is_active).length : "—", detail: "Active model configurations" },
+          ].map((item) => (
+            <Card key={item.label} variant="outlined" sx={{ borderColor: panelBorder, borderRadius: 3, minWidth: 0, height: "100%" }}>
+              <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+                <Typography variant="body2" color="text.secondary">{item.label}</Typography>
+                <Typography variant="h4" sx={{ mt: 0.75, fontWeight: 700 }}>{item.value}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>{item.detail}</Typography>
               </CardContent>
             </Card>
-          );
-        })}
-      </Box>
+          ))}
+        </Box>
+      </Stack>
+
+      <EvaluationCharts runs={evaluationRuns} projectSelected={Boolean(selectedProjectId)} />
+
+      <Card variant="outlined" sx={{ borderColor: panelBorder, borderRadius: 3, overflow: "hidden" }}>
+        <CardContent sx={{ p: 0 }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between" alignItems={{ sm: "center" }} sx={{ p: 2.5, borderBottom: 1, borderColor: "divider" }}>
+            <Box>
+              <Typography variant="h6" fontWeight={700}>Recent evaluation runs</Typography>
+              <Typography variant="body2" color="text.secondary">Latest activity in {selectedProject?.name ?? "the selected project"}.</Typography>
+            </Box>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip size="small" variant="outlined" label={selectedProjectId ? `${evaluationRuns.length} total` : "No project selected"} />
+              {selectedProjectId && <Button component={RouterLink} to="/evaluations" size="small" endIcon={<KeyboardArrowRightOutlined />}>View all</Button>}
+            </Stack>
+          </Stack>
+          {!selectedProjectId ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2.5 }}>Select a project to see its recent evaluations.</Typography>
+          ) : isEvaluationsLoading ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2.5 }}>Loading recent evaluations…</Typography>
+          ) : recentRuns.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2.5 }}>No evaluation runs have been created for this project yet.</Typography>
+          ) : (
+            <Stack>
+              {recentRuns.map((run, index) => (
+                <Box key={run.id} component={RouterLink} to={`/evaluations/${run.id}`} sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5, alignItems: { sm: "center" }, justifyContent: "space-between", px: 2.5, py: 1.75, borderBottom: index < recentRuns.length - 1 ? 1 : 0, borderColor: "divider", color: "inherit", textDecoration: "none", transition: "background-color 120ms ease", "&:hover": { bgcolor: "action.hover" } }}>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" fontWeight={650} noWrap title={run.name}>{run.name}</Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {modelNames[run.model_id] ?? "Unknown model"} · {run.evaluation_type.toUpperCase()} · {new Date(run.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center">
+                    <Typography variant="caption" color="text.secondary">{run.completed_cases + run.failed_cases + run.not_applicable_cases} / {run.total_cases} cases processed</Typography>
+                    <StatusChip status={run.status} />
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined" sx={{ borderColor: panelBorder, borderRadius: 3, overflow: "hidden" }}>
+        <CardContent sx={{ p: 0 }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between" alignItems={{ sm: "center" }} sx={{ p: 2.5, borderBottom: 1, borderColor: "divider" }}>
+            <Box>
+              <Typography variant="h6" fontWeight={700}>Recent experiments</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {selectedProject ? `Comparisons in ${selectedProject.name}` : "Experiment workspaces for the selected project"}
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip size="small" variant="outlined" label={selectedProjectId ? `${activeExperimentCount} active · ${experiments.length} total` : "No project selected"} />
+              {selectedProjectId && <Button component={RouterLink} to="/experiments" size="small" endIcon={<KeyboardArrowRightOutlined />}>View all</Button>}
+            </Stack>
+          </Stack>
+          {!selectedProjectId ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2.5 }}>Select a project to see its experiments.</Typography>
+          ) : isExperimentsLoading ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2.5 }}>Loading experiments…</Typography>
+          ) : recentExperiments.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2.5 }}>No experiments have been created for this project yet.</Typography>
+          ) : (
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(4, minmax(0, 1fr))" }, gap: 1.5, p: 2 }}>
+              {recentExperiments.map((experiment) => (
+                <Card key={experiment.id} variant="outlined" sx={{ borderRadius: 2, minWidth: 0, height: "100%" }}>
+                  <CardActionArea component={RouterLink} to={`/experiments/${experiment.id}`} sx={{ height: "100%" }}>
+                    <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                      <Stack spacing={1.25} sx={{ height: "100%" }}>
+                        <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
+                          <Typography variant="subtitle2" fontWeight={700} sx={{ minWidth: 0, overflowWrap: "anywhere" }}>{experiment.name}</Typography>
+                          <StatusChip active={experiment.is_active} />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: 40, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                          {experiment.description || "No description provided."}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: "auto" }}>
+                          Created {new Date(experiment.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                        </Typography>
+                      </Stack>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              ))}
+            </Box>
+          )}
+        </CardContent>
+      </Card>
 
       <Stack spacing={1.5}>
         <Box>

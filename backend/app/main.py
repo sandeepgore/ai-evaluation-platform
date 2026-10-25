@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.api.router import api_router
 from app.config.settings import settings
 from app.db.session import AsyncSessionLocal
+from app.middleware.audit import AuditLogMiddleware
 from app.services.evaluation.scheduler import EvaluationScheduler
 from app.services.evaluation_queue.evaluation_queue import EvaluationQueue
 
@@ -59,6 +60,8 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
+
+app.add_middleware(AuditLogMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,3 +1,4 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
 import React, { useMemo, useState } from "react";
 import {
   AddOutlined,
@@ -22,6 +23,7 @@ import {
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { EmptyState } from "../../components/common/EmptyState";
 import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { ErrorState } from "../../components/common/ErrorState";
@@ -38,6 +40,7 @@ import { useDatasetVersions } from "./hooks";
 
 type VersionStatusFilter = "all" | DatasetVersionStatus;
 type VersionSortField = "version" | "status" | "case_count";
+
 
 export function DatasetVersionListPage() {
   const navigate = useNavigate();
@@ -107,6 +110,7 @@ export function DatasetVersionListPage() {
   }
 
   return (
+    <ScreenWithActivity screen="dataset_versions">
     <Stack spacing={3.5} sx={{ pb: 4 }}>
       {/* Breadcrumb Navigation */}
       <AppBreadcrumbs
@@ -221,7 +225,7 @@ export function DatasetVersionListPage() {
               </Select>
             </FormControl>
 
-            <Button
+            <PermissionGate permission="write"><Button
               variant="outlined"
               color="inherit"
               startIcon={<FileUploadOutlined fontSize="small" />}
@@ -233,10 +237,10 @@ export function DatasetVersionListPage() {
                 borderColor: "divider",
               }}
             >
-              Import JSON
-            </Button>
+              Import Golden Dataset
+            </Button></PermissionGate>
 
-            <Button
+            <PermissionGate permission="write"><Button
               variant="contained"
               disableElevation
               startIcon={<AddOutlined fontSize="small" />}
@@ -249,7 +253,7 @@ export function DatasetVersionListPage() {
               }}
             >
               Create Version
-            </Button>
+            </Button></PermissionGate>
           </Stack>
         </Stack>
       </Paper>
@@ -340,5 +344,6 @@ export function DatasetVersionListPage() {
         onClose={() => setImportDialogOpen(false)}
       />
     </Stack>
+      </ScreenWithActivity>
   );
 }

@@ -1,7 +1,6 @@
 import { VisibilityOutlined } from "@mui/icons-material";
 import {
   Box,
-  Button,
   Chip,
   LinearProgress,
   Paper,
@@ -18,6 +17,8 @@ import {
   alpha,
 } from "@mui/material";
 import type { EvaluationRun } from "./api";
+import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
 
 export type EvaluationSortField =
   | "name"
@@ -30,7 +31,6 @@ export type EvaluationSortField =
   | "model"
   | "duration_ms"
   | "created_at";
-
 export type EvaluationSortDirection = "asc" | "desc";
 
 interface EvaluationTableProps {
@@ -49,72 +49,20 @@ const evaluationTypeLabels: Record<EvaluationRun["evaluation_type"], string> = {
   safety: "Safety",
 };
 
-const statusConfig: Record<
-  EvaluationRun["status"],
-  {
-    label: string;
-    color:
-      | "default"
-      | "primary"
-      | "secondary"
-      | "error"
-      | "info"
-      | "success"
-      | "warning";
-  }
-> = {
-  pending: {
-    label: "Pending",
-    color: "default",
-  },
-  running: {
-    label: "Running",
-    color: "info",
-  },
-  completed: {
-    label: "Completed",
-    color: "success",
-  },
-  failed: {
-    label: "Failed",
-    color: "error",
-  },
-  cancelled: {
-    label: "Cancelled",
-    color: "warning",
-  },
-};
-
 function formatDuration(durationMs: number | null): string {
-  if (durationMs === null) {
-    return "—";
-  }
-
-  if (durationMs < 1000) {
-    return `${durationMs} ms`;
-  }
-
+  if (durationMs === null) return "—";
+  if (durationMs < 1000) return `${durationMs} ms`;
   const seconds = durationMs / 1000;
-
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)} s`;
-  }
-
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
   const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-
-  return `${minutes}m ${remainingSeconds}s`;
+  return `${minutes}m ${Math.round(seconds % 60)}s`;
 }
 
-function formatCreatedAt(createdAt: string): string {
-  return new Date(createdAt).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
-function getProcessedCases(run: EvaluationRun): number {
-  return run.completed_cases + run.failed_cases + run.not_applicable_cases;
+function formatCreatedAt(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function EvaluationTable({
@@ -125,7 +73,7 @@ export function EvaluationTable({
   onSort,
   onView,
 }: EvaluationTableProps) {
-  const renderSortLabel = (field: EvaluationSortField, label: string) => (
+  const sortLabel = (field: EvaluationSortField, label: string) => (
     <TableSortLabel
       active={sortField === field}
       direction={sortField === field ? sortDirection : "asc"}
@@ -140,332 +88,134 @@ export function EvaluationTable({
       component={Paper}
       variant="outlined"
       sx={{
-        borderRadius: 0,
+        width: "100%",
+        maxWidth: "100%",
         border: 0,
+        borderRadius: 0,
         overflowX: "auto",
+        overflowY: "auto",
+        "&::-webkit-scrollbar": { height: 8 },
+        "&::-webkit-scrollbar-thumb": {
+          bgcolor: "action.disabled",
+          borderRadius: 4,
+        },
       }}
     >
-      <Table sx={{ minWidth: 1000 }}>
+      <Table size="small" sx={{ minWidth: 1200, tableLayout: "fixed" }}>
         <TableHead>
           <TableRow sx={{ bgcolor: "action.hover" }}>
-            <TableCell sx={{ minWidth: 160 }}>
-              {renderSortLabel("name", "Evaluation")}
-            </TableCell>
-
-            <TableCell sx={{ width: 110 }}>
-              {renderSortLabel("evaluation_type", "Type")}
-            </TableCell>
-
-            <TableCell sx={{ width: 120 }}>
-              {renderSortLabel("status", "Status")}
-            </TableCell>
-
-            <TableCell sx={{ width: 100 }}>
-              {renderSortLabel("completed_cases", "Completed")}
-            </TableCell>
-
-            <TableCell sx={{ width: 90 }}>
-              {renderSortLabel("failed_cases", "Failed")}
-            </TableCell>
-
-            <TableCell sx={{ width: 80 }}>
-              {renderSortLabel("not_applicable_cases", "N/A")}
-            </TableCell>
-
-            <TableCell sx={{ minWidth: 160 }}>
-              {renderSortLabel("total_cases", "Progress")}
-            </TableCell>
-
-            <TableCell sx={{ minWidth: 140 }}>
-              {renderSortLabel("model", "Model")}
-            </TableCell>
-
-            <TableCell sx={{ width: 110 }}>
-              {renderSortLabel("duration_ms", "Duration")}
-            </TableCell>
-
-            <TableCell sx={{ minWidth: 160 }}>
-              {renderSortLabel("created_at", "Created")}
-            </TableCell>
-
-            <TableCell align="right" sx={{ width: 110, minWidth: 110 }}>
+            <TableCell sx={{ minWidth: 180 }}>{sortLabel("name", "Evaluation")}</TableCell>
+            <TableCell sx={{ width: 110 }}>{sortLabel("evaluation_type", "Type")}</TableCell>
+            <TableCell sx={{ width: 120 }}>{sortLabel("status", "Status")}</TableCell>
+            <TableCell sx={{ minWidth: 200 }}>Case outcomes</TableCell>
+            <TableCell sx={{ minWidth: 150 }}>{sortLabel("total_cases", "Progress")}</TableCell>
+            <TableCell sx={{ minWidth: 140 }}>{sortLabel("model", "Model")}</TableCell>
+            <TableCell sx={{ width: 110 }}>{sortLabel("duration_ms", "Duration")}</TableCell>
+            <TableCell sx={{ minWidth: 155 }}>{sortLabel("created_at", "Created")}</TableCell>
+            <TableCell
+              align="right"
+              sx={{
+                width: 100,
+                minWidth: 100,
+                position: "sticky",
+                right: 0,
+                zIndex: 3,
+                bgcolor: "action.hover",
+              }}
+            >
               Actions
             </TableCell>
           </TableRow>
         </TableHead>
-
         <TableBody>
+          {runs.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
+                <Typography variant="body2" color="text.secondary">
+                  No evaluations match your search.
+                </Typography>
+              </TableCell>
+            </TableRow>
+          )}
           {runs.map((run) => {
+            const pending = run.status === "pending";
+            const processed = run.completed_cases + run.failed_cases + run.not_applicable_cases;
+            const progress = run.total_cases > 0
+              ? Math.min(100, (processed / run.total_cases) * 100)
+              : 0;
             const modelName = modelNames[run.model_id] ?? "Unknown model";
-
-            const isPending = run.status === "pending";
-
-            const processedCases = getProcessedCases(run);
-
-            const progressPercentage =
-              run.total_cases > 0
-                ? Math.min(100, (processedCases / run.total_cases) * 100)
-                : 0;
-
-            const status = statusConfig[run.status] ?? {
-              label: run.status,
-              color: "default",
-            };
-
             return (
-              <TableRow
-                key={run.id}
-                hover
-                sx={{
-                  "&:last-child td, &:last-child th": {
-                    border: 0,
-                  },
-                  transition: "background-color 0.2s ease",
-                }}
-              >
-                {/* Name */}
+              <TableRow key={run.id} hover>
                 <TableCell>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {run.name}
-                  </Typography>
+                  <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: "anywhere" }}>{run.name}</Typography>
                 </TableCell>
-                {/* Type */}
                 <TableCell>
-                  <Chip
-                    label={
-                      evaluationTypeLabels[run.evaluation_type] ??
-                      run.evaluation_type
-                    }
-                    size="small"
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 1.5,
-                      fontSize: "0.75rem",
-                      fontWeight: 600,
-                    }}
-                  />
+                  <Chip size="small" label={evaluationTypeLabels[run.evaluation_type] ?? run.evaluation_type} variant="outlined" />
                 </TableCell>
-                {/* Status */}
                 <TableCell>
-                  <Chip
-                    label={status.label}
-                    size="small"
-                    color={status.color}
-                    sx={{
-                      fontWeight: 600,
-                      fontSize: "0.75rem",
-                      borderRadius: 1.5,
-                    }}
-                  />
+                  <StatusChip status={run.status} />
                 </TableCell>
-                {/* Completed */}
                 <TableCell>
-                  <Tooltip
-                    title={
-                      isPending
-                        ? "Evaluation has not started"
-                        : `${run.completed_cases} completed cases`
-                    }
-                  >
-                    <Typography
-                      variant="body2"
-                      color={
-                        run.completed_cases > 0
-                          ? "success.main"
-                          : "text.secondary"
-                      }
-                      sx={{
-                        whiteSpace: "nowrap",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {isPending ? "—" : `✓ ${run.completed_cases}`}
-                    </Typography>
-                  </Tooltip>
-                </TableCell>
-                {/* Failed */}
-                <TableCell>
-                  <Tooltip
-                    title={
-                      isPending
-                        ? "Evaluation has not started"
-                        : `${run.failed_cases} failed cases`
-                    }
-                  >
-                    <Typography
-                      variant="body2"
-                      color={
-                        run.failed_cases > 0 ? "error.main" : "text.secondary"
-                      }
-                      sx={{
-                        whiteSpace: "nowrap",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {isPending ? "—" : `✕ ${run.failed_cases}`}
-                    </Typography>
-                  </Tooltip>
-                </TableCell>
-                {/* N/A */}
-                <TableCell>
-                  <Tooltip
-                    title={
-                      isPending
-                        ? "Evaluation has not started"
-                        : `${run.not_applicable_cases} not applicable cases`
-                    }
-                  >
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {isPending ? "—" : run.not_applicable_cases}
-                    </Typography>
-                  </Tooltip>
-                </TableCell>
-                {/* Progress */}
-                <TableCell>
-                  <Tooltip
-                    title={
-                      isPending
-                        ? "Evaluation has not started"
-                        : `${processedCases} of ${run.total_cases} cases processed`
-                    }
-                  >
-                    <Box
-                      sx={{
-                        width: "100%",
-                        maxWidth: 140,
-                      }}
-                    >
-                      <Stack
-                        direction="row"
-                        sx={{
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          mb: 0.5,
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{
-                            fontWeight: 600,
-                            fontSize: "0.75rem",
-                          }}
-                        >
-                          {isPending
-                            ? "Not started"
-                            : `${processedCases} / ${run.total_cases}`}
+                  {pending ? (
+                    <Typography variant="body2" color="text.secondary">Not started</Typography>
+                  ) : (
+                    <Stack spacing={0.25}>
+                      <Typography variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                        {run.completed_cases} completed · {run.failed_cases} failed
+                      </Typography>
+                      {run.not_applicable_cases > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          {run.not_applicable_cases} not applicable
                         </Typography>
-                      </Stack>
-
-                      {!isPending && (
+                      )}
+                    </Stack>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Tooltip title={pending ? "Evaluation has not started" : `${processed} of ${run.total_cases} cases processed`}>
+                    <Box sx={{ maxWidth: 140 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {pending ? "Not started" : `${processed} of ${run.total_cases}`}
+                      </Typography>
+                      {!pending && (
                         <LinearProgress
                           variant="determinate"
-                          value={progressPercentage}
+                          value={progress}
                           color={run.status === "failed" ? "error" : "primary"}
-                          sx={{
-                            height: 6,
-                            borderRadius: 3,
-                            bgcolor: (theme) =>
-                              alpha(theme.palette.text.primary, 0.08),
-                          }}
+                          sx={{ mt: 0.5, height: 6, borderRadius: 3, bgcolor: (theme) => alpha(theme.palette.text.primary, 0.08) }}
                         />
                       )}
                     </Box>
                   </Tooltip>
                 </TableCell>
-                {/* Model */}
                 <TableCell>
-                  <Tooltip
-                    title={
-                      modelName === "Unknown model"
-                        ? "The model associated with this evaluation could not be found."
-                        : modelName
-                    }
-                  >
-                    <Typography
-                      variant="body2"
-                      color={
-                        modelName === "Unknown model"
-                          ? "text.disabled"
-                          : "text.primary"
-                      }
-                      sx={{
-                        maxWidth: 150,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
+                  <Tooltip title={modelName}>
+                    <Typography variant="body2" sx={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {modelName}
                     </Typography>
                   </Tooltip>
                 </TableCell>
-                {/* Duration */}
-                <TableCell>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                      fontFamily: "monospace",
-                      fontSize: "0.8125rem",
-                    }}
-                  >
-                    {formatDuration(run.duration_ms)}
-                  </Typography>
+                <TableCell><Typography variant="body2" color="text.secondary">{formatDuration(run.duration_ms)}</Typography></TableCell>
+                <TableCell sx={{ whiteSpace: "nowrap" }}>
+                  <Typography variant="body2" color="text.secondary">{formatCreatedAt(run.created_at)}</Typography>
                 </TableCell>
-                {/* Created */}
-                <TableCell>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                      whiteSpace: "nowrap",
-                      fontSize: "0.8125rem",
-                    }}
-                  >
-                    {formatCreatedAt(run.created_at)}
-                  </Typography>
-                </TableCell>
-                {/* Actions */}
                 <TableCell
                   align="right"
                   sx={{
-                  width: 110,
-                  minWidth: 110,
+                    width: 100,
+                    minWidth: 100,
                     p: 1,
                     position: "sticky",
                     right: 0,
-                    zIndex: 2,
+                    zIndex: 1,
                     bgcolor: "background.paper",
-                    visibility: "visible",
-                    opacity: 1,
                   }}
                 >
-                  <Tooltip title="View evaluation details">
-                    <Button
-                      aria-label={`View ${run.name}`}
-                      onClick={() => onView(run)}
-                      size="small"
-                      color="primary"
-                      variant="text"
-                      startIcon={<VisibilityOutlined fontSize="small" />}
-                      sx={{
-                        display: "inline-flex",
-                        visibility: "visible",
-                        opacity: 1,
-                        minWidth: 0,
-                        textTransform: "none",
-                      }}
-                    >
-                      View
-                    </Button>
-                  </Tooltip>
+                  <TableActionButton
+                    label={`View ${run.name}`}
+                    icon={<VisibilityOutlined fontSize="small" />}
+                    onClick={() => onView(run)}
+                  />
                 </TableCell>
               </TableRow>
             );

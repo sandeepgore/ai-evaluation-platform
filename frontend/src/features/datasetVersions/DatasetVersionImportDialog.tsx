@@ -23,7 +23,7 @@ import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 
-import { useImportDataset } from "./hooks";
+import { useImportDataset, useImportDatasetFile } from "./hooks";
 import type { DatasetImportPayload } from "./api";
 
 interface DatasetVersionImportDialogProps {
@@ -125,6 +125,9 @@ export function DatasetVersionImportDialog({
 }: DatasetVersionImportDialogProps) {
   const theme = useTheme();
   const importMutation = useImportDataset();
+  const importFileMutation = useImportDatasetFile();
+  const isImportPending =
+    importMutation.isPending || importFileMutation.isPending;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -142,7 +145,7 @@ export function DatasetVersionImportDialog({
   };
 
   const handleClose = () => {
-    if (importMutation.isPending) {
+    if (isImportPending) {
       return;
     }
     resetState();
@@ -157,22 +160,30 @@ export function DatasetVersionImportDialog({
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith(".json")) {
-      setError("Please select a valid .json file.");
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Dataset files must be 10 MB or smaller.");
+      setSelectedFile(null);
+      return;
+    }
+
+    const extension = file.name.toLowerCase().split(".").pop();
+    if (!extension || !["json", "csv", "xlsx"].includes(extension)) {
+      setError("Choose a JSON, CSV, or Excel (.xlsx) file.");
       setSelectedFile(null);
       return;
     }
 
     try {
-      const content = await file.text();
-      parseImportFile(content);
+      if (extension === "json") {
+        parseImportFile(await file.text());
+      }
       setSelectedFile(file);
     } catch (err) {
       setSelectedFile(null);
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to parse the selected JSON file.",
+          : "Unable to read the selected file.",
       );
     }
   };
@@ -202,19 +213,22 @@ export function DatasetVersionImportDialog({
 
   const handleImport = async () => {
     if (!selectedFile) {
-      setError("Please select a JSON file to import.");
+      setError("Please select a dataset file to import.");
       return;
     }
 
     try {
-      const content = await selectedFile.text();
-      const payload = parseImportFile(content);
-
       setError("");
-      await importMutation.mutateAsync({
-        datasetId,
-        payload,
-      });
+      if (selectedFile.name.toLowerCase().endsWith(".json")) {
+        const payload = parseImportFile(await selectedFile.text());
+        await importMutation.mutateAsync({
+          datasetId,
+          payload,
+          filename: selectedFile.name,
+        });
+      } else {
+        await importFileMutation.mutateAsync({ datasetId, file: selectedFile });
+      }
 
       handleClose();
     } catch (err) {
@@ -242,7 +256,7 @@ export function DatasetVersionImportDialog({
       }}
     >
       <DialogTitle sx={{ pb: 1, fontWeight: 700 }}>
-        Import Dataset Version
+        Import Golden Dataset
       </DialogTitle>
 
       <DialogContent sx={{ pt: 1 }}>
@@ -254,32 +268,48 @@ export function DatasetVersionImportDialog({
               color="text.secondary"
               sx={{ lineHeight: 1.5 }}
             >
-              Upload a valid JSON file containing evaluation test scenarios. A
-              new dataset version will be created automatically upon import.
+              Upload JSON, CSV, or Excel (.xlsx) evaluation cases. CSV and
+              Excel files need an <strong>input</strong> column;{" "}
+              <strong>expected_output</strong> and <strong>metadata</strong> are
+              optional. Other columns are saved as metadata. A new golden
+              dataset version will be created automatically upon import.
             </Typography>
 
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Button
-                component="a"
-                href="/examples/dataset-import-sample.json"
-                download="dataset-import-sample.json"
-                variant="text"
-                size="small"
-                startIcon={<FileDownloadOutlinedIcon fontSize="small" />}
-                sx={{
-                  textTransform: "none",
-                  fontWeight: 600,
-                  fontSize: "0.8125rem",
-                  px: 0,
-                  "&:hover": {
-                    bgcolor: "transparent",
-                    textDecoration: "underline",
-                  },
-                }}
-              >
-                Download Sample JSON Template
-              </Button>
-            </Box>
+            <Stack
+              direction="row"
+              spacing={1}
+              useFlexGap
+              flexWrap="wrap"
+              sx={{ alignItems: "center" }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                Download a sample:
+              </Typography>
+              {[
+                { label: "JSON", extension: "json" },
+                { label: "CSV", extension: "csv" },
+                { label: "Excel", extension: "xlsx" },
+              ].map(({ label, extension }) => (
+                <Button
+                  key={extension}
+                  component="a"
+                  href={`/examples/dataset-import-sample.${extension}`}
+                  download={`dataset-import-sample.${extension}`}
+                  variant="text"
+                  size="small"
+                  startIcon={<FileDownloadOutlinedIcon fontSize="small" />}
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 600,
+                    fontSize: "0.8125rem",
+                    px: 0.5,
+                    minWidth: 0,
+                  }}
+                >
+                  {label}
+                </Button>
+              ))}
+            </Stack>
           </Stack>
 
           {/* Interactive Drag & Drop File Box */}
@@ -304,7 +334,7 @@ export function DatasetVersionImportDialog({
                 : selectedFile
                   ? alpha(theme.palette.success.main, 0.02)
                   : alpha(theme.palette.action.hover, 0.05),
-              cursor: importMutation.isPending ? "not-allowed" : "pointer",
+              cursor: isImportPending ? "not-allowed" : "pointer",
               transition: "all 0.2s ease-in-out",
               textAlign: "center",
               "&:hover": {
@@ -317,11 +347,11 @@ export function DatasetVersionImportDialog({
               ref={fileInputRef}
               hidden
               type="file"
-              accept=".json,application/json"
+              accept=".json,.csv,.xlsx,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={(event) => {
                 void handleFileChange(event);
               }}
-              disabled={importMutation.isPending}
+              disabled={isImportPending}
             />
 
             <Stack spacing={1.5} sx={{ alignItems: "center" }}>
@@ -354,7 +384,7 @@ export function DatasetVersionImportDialog({
                 </Typography>
 
                 <Typography variant="caption" color="text.secondary">
-                  JSON format up to 10MB
+                  JSON, CSV, or Excel (.xlsx), up to 10 MB
                 </Typography>
               </Stack>
             </Stack>
@@ -404,7 +434,7 @@ export function DatasetVersionImportDialog({
                     e.stopPropagation();
                     resetState();
                   }}
-                  disabled={importMutation.isPending}
+                  disabled={isImportPending}
                 >
                   <CloseIcon fontSize="small" />
                 </IconButton>
@@ -428,7 +458,7 @@ export function DatasetVersionImportDialog({
       <DialogActions sx={{ px: 3, pb: 2, pt: 1 }}>
         <Button
           onClick={handleClose}
-          disabled={importMutation.isPending}
+          disabled={isImportPending}
           sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
         >
           Cancel
@@ -440,9 +470,9 @@ export function DatasetVersionImportDialog({
           onClick={() => {
             void handleImport();
           }}
-          disabled={!selectedFile || importMutation.isPending}
+          disabled={!selectedFile || isImportPending}
           startIcon={
-            importMutation.isPending ? (
+            isImportPending ? (
               <CircularProgress size={16} color="inherit" />
             ) : null
           }
@@ -453,7 +483,7 @@ export function DatasetVersionImportDialog({
             px: 3,
           }}
         >
-          {importMutation.isPending ? "Importing..." : "Import Version"}
+          {isImportPending ? "Importing..." : "Import Dataset"}
         </Button>
       </DialogActions>
     </Dialog>

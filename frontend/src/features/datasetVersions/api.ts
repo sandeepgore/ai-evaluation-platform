@@ -83,10 +83,28 @@ export async function createDatasetVersion(
 export async function importDataset(
   datasetId: string,
   payload: DatasetImportPayload,
+  filename?: string,
 ): Promise<DatasetVersion> {
   const response = await apiClient.post<DatasetVersion>(
     `/api/v1/datasets/${datasetId}/import`,
     payload,
+    { params: filename ? { filename } : undefined },
+  );
+
+  return response.data;
+}
+
+export async function importDatasetFile(
+  datasetId: string,
+  file: File,
+): Promise<DatasetVersion> {
+  const response = await apiClient.post<DatasetVersion>(
+    `/api/v1/datasets/${datasetId}/import-file`,
+    file,
+    {
+      params: { filename: file.name },
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    },
   );
 
   return response.data;

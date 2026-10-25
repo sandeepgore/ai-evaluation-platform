@@ -1,8 +1,8 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
 import {
   AddOutlined,
   DeleteOutlined,
   SearchOutlined,
-  ScienceOutlined,
   VisibilityOutlined,
 } from "@mui/icons-material";
 import {
@@ -13,7 +13,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
   InputAdornment,
   Paper,
   Stack,
@@ -24,13 +23,15 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
 import { ConfirmDialog } from "../../components/common/ConfirmDialog";
+import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { DataTablePagination } from "../../components/common/DataTablePagination";
 import {
   DataTableSortLabel,
@@ -59,6 +60,7 @@ function formatDate(value: string) {
         timeStyle: "short",
       });
 }
+
 
 export function ExperimentListPage() {
   const navigate = useNavigate();
@@ -108,6 +110,10 @@ export function ExperimentListPage() {
     currentPage * pageSize,
     currentPage * pageSize + pageSize,
   );
+  const activeCount = (experiments ?? []).filter((experiment) => experiment.is_active).length;
+  const latestExperiment = [...(experiments ?? [])].sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  )[0];
 
   useEffect(() => {
     if (page !== currentPage) setPage(currentPage);
@@ -174,6 +180,7 @@ export function ExperimentListPage() {
     );
 
   return (
+    <ScreenWithActivity screen="experiments">
     <Stack spacing={3}>
       <AppBreadcrumbs items={[{ label: "Experiments" }]} />
 
@@ -190,7 +197,7 @@ export function ExperimentListPage() {
             Group evaluation runs and compare saved result snapshots.
           </Typography>
         </Box>
-        <Button
+        <PermissionGate permission="write"><Button
           variant="contained"
           disableElevation
           startIcon={<AddOutlined />}
@@ -202,8 +209,22 @@ export function ExperimentListPage() {
           }}
         >
           New experiment
-        </Button>
+        </Button></PermissionGate>
       </Stack>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" }, gap: 2 }}>
+        {[
+          { label: "Total experiments", value: experiments?.length ?? 0, helper: "In this project" },
+          { label: "Active", value: activeCount, helper: "Available for new comparisons" },
+          { label: "Most recently created", value: latestExperiment?.name ?? "No experiments yet", helper: latestExperiment ? formatDate(latestExperiment.created_at) : "Create an experiment to get started" },
+        ].map((metric) => (
+          <Paper key={metric.label} variant="outlined" sx={{ p: 2, borderRadius: 2.5, minWidth: 0, height: "100%" }}>
+            <Typography variant="caption" color="text.secondary">{metric.label}</Typography>
+            <Typography variant="h6" fontWeight={700} noWrap title={String(metric.value)} sx={{ mt: 0.25 }}>{metric.value}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap display="block">{metric.helper}</Typography>
+          </Paper>
+        ))}
+      </Box>
 
       {experiments?.length === 0 ? (
         <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
@@ -212,12 +233,12 @@ export function ExperimentListPage() {
             description="Create an experiment to compare completed evaluation runs over time."
           />
           <Stack direction="row" sx={{ justifyContent: "center" }}>
-            <Button
+            <PermissionGate permission="write"><Button
               startIcon={<AddOutlined />}
               onClick={() => setIsCreateOpen(true)}
             >
               Create experiment
-            </Button>
+            </Button></PermissionGate>
           </Stack>
         </Paper>
       ) : (
@@ -266,7 +287,7 @@ export function ExperimentListPage() {
           ) : (
             <>
               <TableContainer sx={{ overflowX: "auto" }}>
-                <Table aria-label="Experiments">
+                <Table aria-label="Experiments" sx={{ minWidth: 900 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell>
@@ -279,6 +300,7 @@ export function ExperimentListPage() {
                         />
                       </TableCell>
                       <TableCell>Description</TableCell>
+                      <TableCell>Status</TableCell>
                       <TableCell>
                         <DataTableSortLabel
                           field="created_at"
@@ -307,7 +329,6 @@ export function ExperimentListPage() {
                             spacing={1.25}
                             sx={{ alignItems: "center" }}
                           >
-                            <ScienceOutlined color="primary" fontSize="small" />
                             <Typography
                               variant="body2"
                               sx={{ fontWeight: 600 }}
@@ -334,6 +355,9 @@ export function ExperimentListPage() {
                             {experiment.description || "No description"}
                           </Typography>
                         </TableCell>
+                        <TableCell>
+                          <StatusChip active={experiment.is_active} />
+                        </TableCell>
                         <TableCell sx={{ whiteSpace: "nowrap" }}>
                           {formatDate(experiment.created_at)}
                         </TableCell>
@@ -341,25 +365,19 @@ export function ExperimentListPage() {
                           align="right"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <Tooltip title="Open experiment">
-                            <IconButton
-                              aria-label={`Open ${experiment.name}`}
-                              onClick={() =>
-                                navigate(`/experiments/${experiment.id}`)
-                              }
-                            >
-                              <VisibilityOutlined />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete experiment">
-                            <IconButton
-                              aria-label={`Delete ${experiment.name}`}
-                              color="error"
+                          <TableActionButton
+                            label={`Open ${experiment.name}`}
+                            icon={<VisibilityOutlined fontSize="small" />}
+                            onClick={() => navigate(`/experiments/${experiment.id}`)}
+                          />
+                          <PermissionGate permission="write">
+                            <TableActionButton
+                              label={`Delete ${experiment.name}`}
+                              icon={<DeleteOutlined fontSize="small" />}
+                              destructive
                               onClick={() => setExperimentToDelete(experiment)}
-                            >
-                              <DeleteOutlined />
-                            </IconButton>
-                          </Tooltip>
+                            />
+                          </PermissionGate>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -445,5 +463,6 @@ export function ExperimentListPage() {
         }}
       />
     </Stack>
+      </ScreenWithActivity>
   );
 }

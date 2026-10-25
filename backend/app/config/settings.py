@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.shared.enums import DataPolicy
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,17 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
     debug: bool = True
+    auth_secret_key: str = "change-this-development-secret-before-deploying"
+    access_token_expire_minutes: int = 60
+
+    @model_validator(mode="after")
+    def validate_auth_secret(self) -> "Settings":
+        if self.environment.lower() in {"prod", "production"} and (
+            self.auth_secret_key == "change-this-development-secret-before-deploying"
+            or len(self.auth_secret_key) < 32
+        ):
+            raise ValueError("AUTH_SECRET_KEY must contain at least 32 characters in production")
+        return self
 
     # ------------------------------------------------------------------
     # Infrastructure

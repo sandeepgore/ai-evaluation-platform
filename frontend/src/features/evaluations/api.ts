@@ -319,6 +319,7 @@ export interface EvaluationResult {
   evaluation_run_id: string;
   dataset_case_id: string;
   status: EvaluationResultStatus;
+  input?: string | null;
   actual_output?: string | null;
   expected_output?: string | null;
   scores?: Record<string, unknown> | null;

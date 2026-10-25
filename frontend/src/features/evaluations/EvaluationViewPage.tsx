@@ -11,9 +11,11 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Paper,
   Stack,
   Tooltip,
@@ -21,11 +23,14 @@ import {
   alpha,
   useTheme,
 } from "@mui/material";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip } from "recharts";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { ConfirmDialog } from "../../components/common/ConfirmDialog";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { StatusChip } from "../../components/common/StatusChip";
 import { downloadBlob } from "../../components/common/downloadBlob";
 import { useNotification } from "../../components/common/NotificationProvider";
 import { useDataset } from "../datasets/hooks";
@@ -39,27 +44,6 @@ import {
   useExecuteEvaluationRun,
   useEvaluationRunLogsAvailability,
 } from "./hooks";
-
-const STATUS_CONFIG: Record<
-  string,
-  {
-    label: string;
-    color:
-      | "default"
-      | "primary"
-      | "secondary"
-      | "error"
-      | "info"
-      | "success"
-      | "warning";
-  }
-> = {
-  pending: { label: "Pending", color: "warning" },
-  running: { label: "Running", color: "info" },
-  completed: { label: "Completed", color: "success" },
-  failed: { label: "Failed", color: "error" },
-  cancelled: { label: "Cancelled", color: "default" },
-};
 
 const EVALUATION_TYPE_LABELS: Record<string, string> = {
   text: "Text Generation",
@@ -90,6 +74,7 @@ function formatDuration(durationMs: number | null): string {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
+
 export function EvaluationViewPage() {
   const { evaluationId } = useParams<{ evaluationId: string }>();
   const navigate = useNavigate();
@@ -99,6 +84,7 @@ export function EvaluationViewPage() {
   const [cancelRequested, setCancelRequested] = useState(false);
   const [waitingForQueue, setWaitingForQueue] = useState(false);
   const [isDownloadingLogs, setIsDownloadingLogs] = useState(false);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
 
   // Prevent rapid duplicate clicks before React re-renders.
   const executionSubmissionLock = useRef(false);
@@ -171,11 +157,6 @@ export function EvaluationViewPage() {
   }, [progressSource.status]);
 
   const palette = theme.palette;
-  const statusConfig = STATUS_CONFIG[progressSource.status] ?? {
-    label: progressSource.status,
-    color: "default" as const,
-  };
-
   const caseColors = {
     completed: palette.success.main,
     failed: palette.error.main,
@@ -238,11 +219,16 @@ export function EvaluationViewPage() {
         ? "Loading dataset version..."
         : "Unknown Dataset Version";
 
-  const total = Math.max(progressSource.total_cases, 1);
-
-  const completedPct = (progressSource.completed_cases / total) * 100;
-  const failedPct = (progressSource.failed_cases / total) * 100;
-  const naPct = (progressSource.not_applicable_cases / total) * 100;
+  const remainingCases = Math.max(
+    progressSource.total_cases - progressSource.completed_cases - progressSource.failed_cases - progressSource.not_applicable_cases,
+    0,
+  );
+  const outcomeData = [
+    { name: "Completed", value: progressSource.completed_cases, color: caseColors.completed },
+    { name: "Failed", value: progressSource.failed_cases, color: caseColors.failed },
+    { name: "Not applicable", value: progressSource.not_applicable_cases, color: caseColors.notApplicable },
+    { name: "Remaining", value: remainingCases, color: alpha(palette.text.primary, 0.12) },
+  ];
 
   const metadata = [
     { label: "Dataset Version", value: datasetVersionName },
@@ -306,19 +292,9 @@ export function EvaluationViewPage() {
               rowGap: 1,
             }}
           >
-            <Chip
-              label={
-                cancelRequested && isActive ? "Stopping..." : statusConfig.label
-              }
-              color={statusConfig.color}
-              variant={
-                progressSource.status === "cancelled" ? "outlined" : "filled"
-              }
-              sx={{
-                fontWeight: 600,
-                borderRadius: 1.5,
-                px: 0.5,
-              }}
+            <StatusChip
+              status={progressSource.status}
+              label={cancelRequested && isActive ? "Stopping" : undefined}
             />
 
             <Tooltip
@@ -371,6 +347,7 @@ export function EvaluationViewPage() {
             )}
 
             {isPending && (
+              <PermissionGate permission="write">
               <Button
                 variant="contained"
                 color="primary"
@@ -417,6 +394,7 @@ export function EvaluationViewPage() {
                     ? "Waiting in Queue..."
                     : "Run Evaluation"}
               </Button>
+              </PermissionGate>
             )}
 
             {isActive && (
@@ -439,7 +417,7 @@ export function EvaluationViewPage() {
                   {isRefreshing ? "Syncing..." : "Refresh"}
                 </Button>
 
-                <Button
+                <PermissionGate permission="write"><Button
                   variant="outlined"
                   color="error"
                   size="small"
@@ -461,7 +439,7 @@ export function EvaluationViewPage() {
                     : cancelMutation.isPending
                       ? "Requesting..."
                       : "Stop Evaluation"}
-                </Button>
+                </Button></PermissionGate>
               </>
             )}
 
@@ -562,161 +540,39 @@ export function EvaluationViewPage() {
             </Typography>
           </Stack>
 
-          {/* Segmented Progress Bar */}
-          <Box
-            aria-label="Evaluation case status distribution"
-            sx={{
-              height: 12,
-              borderRadius: 6,
-              bgcolor: alpha(palette.text.primary, 0.08),
-              overflow: "hidden",
-              display: "flex",
-              width: "100%",
-            }}
-          >
-            <Tooltip title={`Completed: ${progressSource.completed_cases}`}>
-              <Box
-                sx={{
-                  width: `${completedPct}%`,
-                  bgcolor: caseColors.completed,
-                  transition: "width 0.4s ease",
-                }}
-              />
-            </Tooltip>
-
-            <Tooltip title={`Failed: ${progressSource.failed_cases}`}>
-              <Box
-                sx={{
-                  width: `${failedPct}%`,
-                  bgcolor: caseColors.failed,
-                  transition: "width 0.4s ease",
-                }}
-              />
-            </Tooltip>
-
-            <Tooltip
-              title={`Not applicable: ${progressSource.not_applicable_cases}`}
-            >
-              <Box
-                sx={{
-                  width: `${naPct}%`,
-                  bgcolor: caseColors.notApplicable,
-                  transition: "width 0.4s ease",
-                }}
-              />
-            </Tooltip>
-          </Box>
-
-          {/* Legend */}
-          <Stack
-            direction="row"
-            spacing={2}
-            useFlexGap
-            sx={{ flexWrap: "wrap" }}
-          >
-            {[
-              { label: "Completed", color: caseColors.completed },
-              { label: "Failed", color: caseColors.failed },
-              { label: "Not applicable", color: caseColors.notApplicable },
-            ].map((item) => (
-              <Stack
-                key={item.label}
-                direction="row"
-                spacing={0.75}
-                sx={{ alignItems: "center" }}
-              >
-                <Box
-                  sx={{
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    bgcolor: item.color,
-                  }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {item.label}
-                </Typography>
-              </Stack>
-            ))}
-          </Stack>
-
-          {/* Case Counters */}
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: {
-                xs: "repeat(2, minmax(0, 1fr))",
-                sm: "repeat(4, minmax(0, 1fr))",
-              },
+              gridTemplateColumns: { xs: "1fr", md: "220px minmax(0, 1fr)" },
               gap: 2,
+              alignItems: "center",
             }}
           >
-            <Paper variant="outlined" sx={metricCardSx}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontWeight: 600, textTransform: "uppercase" }}
-              >
-                Completed
-              </Typography>
-              <Typography
-                variant="h6"
-                color="success.main"
-                sx={{ fontWeight: 700, mt: 0.5 }}
-              >
-                {progressSource.completed_cases}
-              </Typography>
-            </Paper>
-
-            <Paper variant="outlined" sx={metricCardSx}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontWeight: 600, textTransform: "uppercase" }}
-              >
-                Failed
-              </Typography>
-              <Typography
-                variant="h6"
-                color="error.main"
-                sx={{ fontWeight: 700, mt: 0.5 }}
-              >
-                {progressSource.failed_cases}
-              </Typography>
-            </Paper>
-
-            <Paper variant="outlined" sx={metricCardSx}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontWeight: 600, textTransform: "uppercase" }}
-              >
-                Not Applicable
-              </Typography>
-              <Typography
-                variant="h6"
-                sx={{
-                  color: caseColors.notApplicable,
-                  fontWeight: 700,
-                  mt: 0.5,
-                }}
-              >
-                {progressSource.not_applicable_cases}
-              </Typography>
-            </Paper>
-
-            <Paper variant="outlined" sx={metricCardSx}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontWeight: 600, textTransform: "uppercase" }}
-              >
-                Total Cases
-              </Typography>
-              <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5 }}>
-                {progressSource.total_cases}
-              </Typography>
-            </Paper>
+            <Box sx={{ position: "relative", width: "100%", height: 200 }} aria-label="Evaluation case outcome chart">
+              {progressSource.total_cases > 0 && <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={outcomeData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={82} paddingAngle={2}>
+                    {outcomeData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                  </Pie>
+                  <ChartTooltip formatter={(value, name) => [value, String(name)]} />
+                </PieChart>
+              </ResponsiveContainer>}
+              <Box sx={{ position: "absolute", inset: 0, display: "grid", placeContent: "center", pointerEvents: "none", textAlign: "center" }}>
+                <Typography variant="h6" fontWeight={700}>{progressSource.progress_percent.toFixed(0)}%</Typography>
+                <Typography variant="caption" color="text.secondary">{progressSource.total_cases ? "evaluated" : "no cases"}</Typography>
+              </Box>
+            </Box>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }, gap: 1.5 }}>
+              {[
+                { label: "Completed", value: progressSource.completed_cases, color: "success.main" },
+                { label: "Failed", value: progressSource.failed_cases, color: "error.main" },
+                { label: "Not applicable", value: progressSource.not_applicable_cases, color: caseColors.notApplicable },
+                { label: "Remaining", value: remainingCases, color: "text.primary" },
+              ].map((item) => <Paper key={item.label} variant="outlined" sx={metricCardSx}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: "uppercase" }}>{item.label}</Typography>
+                <Typography variant="h6" sx={{ color: item.color, fontWeight: 700, mt: 0.5 }}>{item.value}</Typography>
+              </Paper>)}
+            </Box>
           </Box>
 
           {isTerminal && progressSource.failed_cases > 0 && (
@@ -742,60 +598,34 @@ export function EvaluationViewPage() {
         </Stack>
       </Paper>
 
-      {/* Run Configuration and Timing */}
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 2, sm: 3 },
-          borderRadius: 3,
-          borderColor: subtleBorder,
-        }}
-      >
-        <Typography variant="h6" sx={{ fontWeight: 600 }} gutterBottom>
-          Run Configuration & Timing
-        </Typography>
-
-        <Divider sx={{ mb: 3 }} />
-
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: {
-              xs: "repeat(1, minmax(0, 1fr))",
-              sm: "repeat(2, minmax(0, 1fr))",
-              md: "repeat(4, minmax(0, 1fr))",
-            },
-            gap: 3,
-          }}
-        >
-          {metadata.map((item) => (
-            <Box key={item.label} sx={{ minWidth: 0 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontWeight: 600, display: "block" }}
-              >
-                {item.label}
-              </Typography>
-
-              <Typography
-                variant="body2"
-                sx={{
-                  mt: 0.5,
-                  fontWeight: item.label === "Total Duration" ? 600 : 500,
-                  fontFamily:
-                    item.label === "Total Duration" ? "monospace" : "inherit",
-                  textTransform:
-                    item.label === "Execution Mode" ? "capitalize" : "none",
-                  overflowWrap: "anywhere",
-                }}
-              >
-                {item.value}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: subtleBorder }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} justifyContent="space-between">
+          <Box>
+            <Typography variant="h6" fontWeight={600}>Run details</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {datasetVersionName} · {modelName} · {formatDuration(progressSource.duration_ms)}
+            </Typography>
+          </Box>
+          <Button variant="outlined" onClick={() => setIsDetailsDialogOpen(true)}>View configuration and timing</Button>
+        </Stack>
       </Paper>
+
+      <Dialog open={isDetailsDialogOpen} onClose={() => setIsDetailsDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Run configuration and timing</DialogTitle>
+        <DialogContent dividers sx={{ maxHeight: "70vh" }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, gap: 2 }}>
+            {metadata.map((item) => <Box key={item.label} sx={{ minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: "block" }}>{item.label}</Typography>
+              <Typography variant="body2" sx={{ mt: 0.5, fontWeight: item.label === "Total Duration" ? 600 : 500, fontFamily: item.label === "Total Duration" ? "monospace" : "inherit", textTransform: item.label === "Execution Mode" ? "capitalize" : "none", overflowWrap: "anywhere" }}>{item.value}</Typography>
+            </Box>)}
+          </Box>
+          {run.configuration && <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Configuration payload</Typography>
+            <Paper component="pre" variant="outlined" sx={{ p: 2, m: 0, maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(run.configuration, null, 2)}</Paper>
+          </Box>}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setIsDetailsDialogOpen(false)}>Close</Button></DialogActions>
+      </Dialog>
 
       <ConfirmDialog
         open={isCancelDialogOpen}

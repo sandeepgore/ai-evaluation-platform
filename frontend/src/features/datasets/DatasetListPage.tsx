@@ -1,3 +1,5 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { AddOutlined, SearchOutlined } from "@mui/icons-material";
 import {
   Box,
@@ -21,6 +23,7 @@ import { DatasetDeleteDialog } from "./DatasetDeleteDialog";
 import { DatasetEditDialog } from "./DatasetEditDialog";
 import { DatasetTable } from "./DatasetTable";
 import { useDatasets } from "./hooks";
+
 
 export function DatasetListPage() {
   const navigate = useNavigate();
@@ -110,6 +113,7 @@ export function DatasetListPage() {
   }
 
   return (
+    <ScreenWithActivity screen="datasets">
     <Stack spacing={3}>
       {/* Header Section */}
       <Stack
@@ -130,7 +134,7 @@ export function DatasetListPage() {
           </Typography>
         </Stack>
 
-        <Button
+        <PermissionGate permission="write"><Button
           variant="contained"
           disableElevation
           startIcon={<AddOutlined />}
@@ -143,7 +147,7 @@ export function DatasetListPage() {
           }}
         >
           Create Dataset
-        </Button>
+        </Button></PermissionGate>
       </Stack>
 
       {/* Main Content Area */}
@@ -156,7 +160,7 @@ export function DatasetListPage() {
             title="No datasets yet"
             description="Create your first dataset for this project to start managing evaluation test cases."
           />
-          <Button
+          <PermissionGate permission="write"><Button
             variant="outlined"
             startIcon={<AddOutlined />}
             onClick={() => setCreateOpen(true)}
@@ -168,7 +172,7 @@ export function DatasetListPage() {
             }}
           >
             Create First Dataset
-          </Button>
+          </Button></PermissionGate>
         </Paper>
       ) : (
         <Paper
@@ -265,5 +269,6 @@ export function DatasetListPage() {
         onClose={() => setDeleteDataset(null)}
       />
     </Stack>
+      </ScreenWithActivity>
   );
 }

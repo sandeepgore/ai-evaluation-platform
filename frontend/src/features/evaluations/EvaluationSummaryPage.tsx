@@ -15,16 +15,20 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   LinearProgress,
   Paper,
   Stack,
-  Tooltip,
   Typography,
 } from "@mui/material";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { StatusChip } from "../../components/common/StatusChip";
 
 import { useEvaluationRun, useEvaluationRunSummary } from "./hooks";
 
@@ -245,45 +249,83 @@ const performanceGuides: Record<string, MetricGuide> = {
   },
 };
 
-function MetricHelpTooltip({
+function MetricHelpDialog({
   label,
   guide,
 }: {
   label: string;
   guide?: MetricGuide;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Tooltip
-      arrow
-      placement="top"
-      title={
-        <Box sx={{ maxWidth: 300, py: 0.5 }}>
+    <>
+      <IconButton size="small" aria-label={`Learn about ${label}`} title={`Learn about ${label}`} onClick={() => setOpen(true)}>
+        <InfoOutlined fontSize="small" />
+      </IconButton>
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{label}</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Box>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             What it measures
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
+          <Typography variant="body2">
             {guide?.meaning ??
               "Meaning depends on the evaluation configuration."}
           </Typography>
+            </Box>
+            <Box>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
             Example
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
+          <Typography variant="body2">
             {guide?.example ??
               "The evaluator applies this metric to the configured input and output."}
           </Typography>
-          <Typography variant="caption">
-            <strong>Required data:</strong>{" "}
-            {guide?.requiredData ?? "Depends on the evaluation configuration."}
-          </Typography>
-        </Box>
-      }
-    >
-      <IconButton size="small" aria-label={`Learn about ${label}`}>
-        <InfoOutlined fontSize="small" />
-      </IconButton>
-    </Tooltip>
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              <strong>Required data:</strong>{" "}
+              {guide?.requiredData ?? "Depends on the evaluation configuration."}
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setOpen(false)}>Close</Button></DialogActions>
+      </Dialog>
+    </>
   );
+}
+
+function MetricScoreCard({
+  metric,
+  value,
+  averageMetricValue,
+  maxMetricMagnitude,
+}: {
+  metric: string;
+  value: number;
+  averageMetricValue: number;
+  maxMetricMagnitude: number;
+}) {
+  const isValid = typeof value === "number" && Number.isFinite(value);
+  const belowAverage = isValid && (isLowerBetterMetric(metric)
+    ? value > averageMetricValue
+    : value < averageMetricValue);
+
+  return <Paper variant="outlined" sx={{ p: 1.75, minWidth: 0, bgcolor: "background.default" }}>
+    <Stack spacing={1}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>{formatMetricLabel(metric)}</Typography>
+        <MetricHelpDialog label={formatMetricLabel(metric)} guide={metricGuides[metric]} />
+      </Stack>
+      <Typography variant="h5" sx={{ fontWeight: 750, fontVariantNumeric: "tabular-nums", color: belowAverage ? "warning.main" : "success.main" }}>
+        {isValid ? formatMetricValue(value) : "—"}
+      </Typography>
+      <LinearProgress aria-label={`${formatMetricLabel(metric)} relative magnitude`} variant="determinate"
+        value={isValid && maxMetricMagnitude > 0 ? (Math.abs(value) / maxMetricMagnitude) * 100 : 0}
+        color={belowAverage ? "warning" : "success"} sx={{ height: 7, borderRadius: 4 }} />
+    </Stack>
+  </Paper>;
 }
 
 function formatCost(amount?: number | null, currency?: string | null): string {
@@ -354,7 +396,7 @@ function ScoreCard({
         <Typography variant="body2" sx={{ color: "text.secondary" }}>
           {label}
         </Typography>
-        {help && <MetricHelpTooltip label={label} guide={help} />}
+        {help && <MetricHelpDialog label={label} guide={help} />}
       </Stack>
 
       <Typography
@@ -443,6 +485,9 @@ function FeedbackSection({
 export function EvaluationSummaryPage() {
   const { evaluationId } = useParams<{ evaluationId: string }>();
   const navigate = useNavigate();
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const { data: evaluationRun } = useEvaluationRun(evaluationId);
 
   const {
@@ -817,22 +862,9 @@ export function EvaluationSummaryPage() {
               mt: 2,
             }}
           >
-            <Chip
-              color="success"
-              variant="outlined"
-              label={`Completed: ${completedCases}`}
-            />
-
-            <Chip
-              color="error"
-              variant="outlined"
-              label={`Failed: ${failedCases}`}
-            />
-
-            <Chip
-              variant="outlined"
-              label={`Not applicable: ${notApplicableCases}`}
-            />
+            <StatusChip status="completed" label={`Completed: ${completedCases}`} />
+            <StatusChip status="failed" label={`Failed: ${failedCases}`} />
+            <StatusChip status="not_applicable" label={`Not applicable: ${notApplicableCases}`} />
           </Stack>
 
           {failedCases > 0 && (
@@ -863,19 +895,8 @@ export function EvaluationSummaryPage() {
             Metric scores
           </Typography>
 
-          <Typography
-            variant="body2"
-            sx={{
-              mt: 0.5,
-              color: "text.secondary",
-            }}
-          >
-            Metric values are averages of per-case scores. For example, 0.80 and
-            0.84 average to 0.82. Values keep the evaluator’s scale, so a score
-            of 4.2 on a 1–5 scale remains 4.2. Scores below the average metric
-            value for this run are highlighted in amber for higher-is-better
-            metrics and when a lower-is-better metric is above the average.
-            Bars show relative magnitude, not a percentage or pass/fail result.
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Per-case averages. Open a metric for its scale and definition.
           </Typography>
 
           {metrics.length === 0 ? (
@@ -900,228 +921,74 @@ export function EvaluationSummaryPage() {
                 gap: 1.5,
               }}
             >
-              {metrics.map(([metric, value]) => {
-                const isValid =
-                  typeof value === "number" && Number.isFinite(value);
-
-                return (
-                  <Paper
-                    key={metric}
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      minWidth: 0,
-                      minHeight: 172,
-                      display: "flex",
-                      bgcolor: "background.default",
-                    }}
-                  >
-                    <Stack spacing={1} sx={{ width: "100%" }}>
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        sx={{
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                        }}
-                      >
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography
-                            variant="subtitle2"
-                            sx={{ fontWeight: 700, overflowWrap: "anywhere" }}
-                          >
-                            {formatMetricLabel(metric)}
-                          </Typography>
-                        </Box>
-                        <MetricHelpTooltip
-                          label={formatMetricLabel(metric)}
-                          guide={metricGuides[metric]}
-                        />
-                      </Stack>
-
-                      <Typography
-                        variant="h5"
-                        sx={{
-                          fontWeight: 750,
-                          flexShrink: 0,
-                          fontVariantNumeric: "tabular-nums",
-                          overflowWrap: "anywhere",
-                          color:
-                            isValid &&
-                            (isLowerBetterMetric(metric)
-                              ? value > averageMetricValue
-                              : value < averageMetricValue)
-                              ? "warning.main"
-                              : isValid
-                                ? "success.main"
-                                : "text.primary",
-                        }}
-                      >
-                        {isValid ? formatMetricValue(value) : "—"}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          flexGrow: 1,
-                          minHeight: 42,
-                          overflowWrap: "anywhere",
-                        }}
-                      >
-                        {metricGuides[metric]?.meaning ??
-                          "Evaluator-provided metric; its meaning depends on the evaluation configuration."}
-                      </Typography>
-                      <LinearProgress
-                        aria-label={`${formatMetricLabel(metric)} relative magnitude`}
-                        variant="determinate"
-                        value={
-                          isValid && maxMetricMagnitude > 0
-                            ? (Math.abs(value) / maxMetricMagnitude) * 100
-                            : 0
-                        }
-                        color={
-                          isValid &&
-                          (isLowerBetterMetric(metric)
-                            ? value > averageMetricValue
-                            : value < averageMetricValue)
-                            ? "warning"
-                            : "success"
-                        }
-                        sx={{ height: 7, borderRadius: 4 }}
-                      />
-                    </Stack>
-                  </Paper>
-                );
-              })}
+                {metrics.slice(0, 4).map(([metric, value]) => (
+                  <MetricScoreCard key={metric} metric={metric} value={value} averageMetricValue={averageMetricValue} maxMetricMagnitude={maxMetricMagnitude} />
+                ))}
             </Box>
           )}
+          {metrics.length > 4 && <Button sx={{ mt: 2 }} onClick={() => setMetricsOpen(true)}>View all {metrics.length} metrics</Button>}
         </Paper>
 
-        <Box>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              mb: 1.5,
-            }}
-          >
-            Evaluation feedback
-          </Typography>
-
-          <Paper variant="outlined" sx={{ ...sectionPaperSx, mb: 1.5 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{ fontWeight: 700 }}
-              gutterBottom
-            >
-              Overall assessment
-            </Typography>
-
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                bgcolor: "action.hover",
-                borderLeft: 3,
-                borderColor: "primary.main",
-              }}
-            >
-              <Typography
-                sx={{
-                  whiteSpace: "pre-wrap",
-                  overflowWrap: "anywhere",
-                  color: feedback?.overall ? "text.primary" : "text.secondary",
-                }}
-              >
-                {feedback?.overall || "No overall assessment is available."}
-              </Typography>
+        <Dialog open={metricsOpen} onClose={() => setMetricsOpen(false)} fullWidth maxWidth="md">
+          <DialogTitle>All metric scores</DialogTitle>
+          <DialogContent dividers sx={{ maxHeight: "70vh" }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 1.5 }}>
+              {metrics.slice(4).map(([metric, value]) => <MetricScoreCard key={metric} metric={metric} value={value} averageMetricValue={averageMetricValue} maxMetricMagnitude={maxMetricMagnitude} />)}
             </Box>
-          </Paper>
-
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                md: "repeat(2, minmax(0, 1fr))",
-              },
-              gap: 2,
-            }}
-          >
-            <FeedbackSection
-              title="Strengths"
-              items={feedback?.strengths ?? []}
-              emptyMessage="No strengths were reported."
-              icon={<CheckCircleOutlined fontSize="small" />}
-              color="success.main"
-            />
-
-            <FeedbackSection
-              title="Weaknesses"
-              items={feedback?.weaknesses ?? []}
-              emptyMessage="No weaknesses were reported."
-              icon={<ThumbDownAltOutlined fontSize="small" />}
-              color="warning.main"
-            />
-
-            <FeedbackSection
-              title="Patterns"
-              items={feedback?.patterns ?? []}
-              emptyMessage="No patterns were reported."
-              icon={<AutoAwesomeOutlined fontSize="small" />}
-              color="info.main"
-            />
-
-            <FeedbackSection
-              title="Recommendations"
-              items={feedback?.recommendations ?? []}
-              emptyMessage="No recommendations were reported."
-              icon={<LightbulbOutlined fontSize="small" />}
-              color="primary.main"
-            />
-          </Box>
-
-          {(feedback?.evaluator_feedback?.length ?? 0) > 0 && (
-            <Paper variant="outlined" sx={{ ...sectionPaperSx, mt: 1.5 }}>
-              <Stack
-                direction="row"
-                spacing={1}
-                sx={{ alignItems: "center", mb: 1.5 }}
-              >
-                <RuleOutlined fontSize="small" color="primary" />
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  Evaluator feedback
-                </Typography>
-                <Chip
-                  size="small"
-                  label={feedback.evaluator_feedback?.length ?? 0}
-                  variant="outlined"
-                />
-              </Stack>
-
-              <Stack spacing={1}>
-                {feedback.evaluator_feedback?.map((item, index) => (
-                  <Box
-                    key={`evaluator-feedback-${index}`}
-                    sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "action.hover" }}
-                  >
-                    <Typography
-                      variant="body2"
-                      sx={{ overflowWrap: "anywhere" }}
-                    >
-                      {item}
-                    </Typography>
-                  </Box>
-                ))}
-              </Stack>
-            </Paper>
-          )}
-        </Box>
+          </DialogContent>
+          <DialogActions><Button onClick={() => setMetricsOpen(false)}>Close</Button></DialogActions>
+        </Dialog>
 
         <Paper variant="outlined" sx={sectionPaperSx}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }} gutterBottom>
-            Performance and usage
-          </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} justifyContent="space-between">
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h6" fontWeight={700}>Evaluation feedback</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                {feedback?.overall || "Open strengths, weaknesses, patterns, and recommendations."}
+              </Typography>
+            </Box>
+            <Button variant="outlined" onClick={() => setFeedbackOpen(true)} sx={{ flexShrink: 0 }}>View feedback</Button>
+          </Stack>
+        </Paper>
+
+        <Dialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} fullWidth maxWidth="md">
+          <DialogTitle>Evaluation feedback</DialogTitle>
+          <DialogContent dividers sx={{ maxHeight: "70vh" }}>
+            <Stack spacing={2}>
+              <Paper variant="outlined" sx={sectionPaperSx}>
+                <Typography variant="subtitle1" fontWeight={700} gutterBottom>Overall assessment</Typography>
+                <Typography sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{feedback?.overall || "No overall assessment is available."}</Typography>
+              </Paper>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>
+                <FeedbackSection title="Strengths" items={feedback?.strengths ?? []} emptyMessage="No strengths were reported." icon={<CheckCircleOutlined fontSize="small" />} color="success.main" />
+                <FeedbackSection title="Weaknesses" items={feedback?.weaknesses ?? []} emptyMessage="No weaknesses were reported." icon={<ThumbDownAltOutlined fontSize="small" />} color="warning.main" />
+                <FeedbackSection title="Patterns" items={feedback?.patterns ?? []} emptyMessage="No patterns were reported." icon={<AutoAwesomeOutlined fontSize="small" />} color="info.main" />
+                <FeedbackSection title="Recommendations" items={feedback?.recommendations ?? []} emptyMessage="No recommendations were reported." icon={<LightbulbOutlined fontSize="small" />} color="primary.main" />
+              </Box>
+              {(feedback?.evaluator_feedback?.length ?? 0) > 0 && <Paper variant="outlined" sx={sectionPaperSx}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}><RuleOutlined fontSize="small" color="primary" /><Typography variant="subtitle1" fontWeight={700}>Evaluator feedback</Typography><Chip size="small" label={feedback.evaluator_feedback?.length ?? 0} variant="outlined" /></Stack>
+                <Stack spacing={1}>{feedback.evaluator_feedback?.map((item, index) => <Box key={`evaluator-feedback-${index}`} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "action.hover" }}><Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{item}</Typography></Box>)}</Stack>
+              </Paper>}
+            </Stack>
+          </DialogContent>
+          <DialogActions><Button onClick={() => setFeedbackOpen(false)}>Close</Button></DialogActions>
+        </Dialog>
+
+        <Paper variant="outlined" sx={sectionPaperSx}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} justifyContent="space-between">
+            <Box>
+              <Typography variant="h6" fontWeight={700}>Performance and usage</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {formatDuration(performance.total_model_latency_ms)} total latency · {formatNumber(performance.total_tokens)} tokens · {formatCost(performance.cost?.total_cost, currency)} total cost
+              </Typography>
+            </Box>
+            <Button variant="outlined" onClick={() => setPerformanceOpen(true)} sx={{ flexShrink: 0 }}>View details</Button>
+          </Stack>
+        </Paper>
+
+        <Dialog open={performanceOpen} onClose={() => setPerformanceOpen(false)} fullWidth maxWidth="md">
+          <DialogTitle>Performance and usage</DialogTitle>
+          <DialogContent dividers sx={{ maxHeight: "70vh" }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Higher-than-average latency, token use, or cost is highlighted for
             attention. Lower values are favorable; throughput is better when higher.
@@ -1240,7 +1107,9 @@ export function EvaluationSummaryPage() {
               )}
             />
           </Box>
-        </Paper>
+          </DialogContent>
+          <DialogActions><Button onClick={() => setPerformanceOpen(false)}>Close</Button></DialogActions>
+        </Dialog>
       </Stack>
     </Box>
   );

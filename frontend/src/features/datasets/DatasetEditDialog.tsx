@@ -102,6 +102,7 @@ export function DatasetEditDialog({
 
         <IconButton
           aria-label="close"
+          title="Close edit dataset dialog"
           onClick={handleClose}
           disabled={updateMutation.isPending}
           size="small"

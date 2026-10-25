@@ -13,6 +13,7 @@ class EvaluationResultResponse(BaseModel):
 
     status: str
 
+    input: str | None = None
     actual_output: str | None = None
     expected_output: str | None = None
 

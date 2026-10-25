@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import EvaluationResult
+from app.models import DatasetCase, EvaluationResult
 from app.schemas.evaluation_results import (
     EvaluationResultListResponse,
     EvaluationResultResponse,
@@ -63,6 +63,13 @@ class EvaluationResultService:
             )
         )
 
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_case_input(db: AsyncSession, dataset_case_id: UUID) -> str | None:
+        result = await db.execute(
+            select(DatasetCase.input).where(DatasetCase.id == dataset_case_id)
+        )
         return result.scalar_one_or_none()
 
     @staticmethod
@@ -169,7 +176,8 @@ class EvaluationResultService:
         total = total_result.scalar_one()
 
         query = (
-            select(EvaluationResult)
+            select(EvaluationResult, DatasetCase.input)
+            .join(DatasetCase, DatasetCase.id == EvaluationResult.dataset_case_id)
             .where(*conditions)
             .order_by(EvaluationResult.created_at.asc())
             .offset(offset)
@@ -177,7 +185,7 @@ class EvaluationResultService:
         )
 
         result = await db.execute(query)
-        items = result.scalars().all()
+        items = result.all()
 
         statistics = await EvaluationResultService.get_run_statistics(
             db,
@@ -185,7 +193,12 @@ class EvaluationResultService:
         )
 
         return EvaluationResultListResponse(
-            items=[EvaluationResultResponse.model_validate(item) for item in items],
+            items=[
+                EvaluationResultResponse.model_validate(item).model_copy(
+                    update={"input": case_input}
+                )
+                for item, case_input in items
+            ],
             total=total,
             statistics=statistics,
         )

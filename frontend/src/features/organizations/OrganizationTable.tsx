@@ -1,6 +1,5 @@
 import { DeleteOutlined, EditOutlined } from "@mui/icons-material";
 import {
-  IconButton,
   Paper,
   Table,
   TableBody,
@@ -8,10 +7,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { DataTableSortLabel, type SortDirection } from "../../components/common/DataTableSortLabel";
 import type { Organization } from "./api";
 
@@ -34,7 +34,7 @@ export function OrganizationTable({
 }: OrganizationTableProps) {
   return (
     <TableContainer component={Paper} variant="outlined">
-      <Table>
+      <Table sx={{ minWidth: 900 }}>
         <TableHead>
           <TableRow>
             <TableCell><DataTableSortLabel field="name" activeField={sortField} direction={sortDirection} label="Organization" onSort={onSort} /></TableCell>
@@ -84,29 +84,10 @@ export function OrganizationTable({
               </TableCell>
 
               <TableCell align="right">
-                <Tooltip title="Edit organization">
-                  <IconButton
-                    aria-label={`Edit ${organization.name}`}
-                    onClick={() => onEdit(organization)}
-                    size="small"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    color="info"
-                  >
-                    <EditOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-
-                <Tooltip title="Delete organization">
-                  <IconButton
-                    aria-label={`Delete ${organization.name}`}
-                    onClick={() => onDelete(organization)}
-                    size="small"
-                    sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    color="error"
-                  >
-                    <DeleteOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <PermissionGate permission="admin">
+                  <TableActionButton label={`Edit ${organization.name}`} icon={<EditOutlined fontSize="small" />} onClick={() => onEdit(organization)} />
+                  <TableActionButton label={`Delete ${organization.name}`} icon={<DeleteOutlined fontSize="small" />} destructive onClick={() => onDelete(organization)} />
+                </PermissionGate>
               </TableCell>
             </TableRow>
           ))}

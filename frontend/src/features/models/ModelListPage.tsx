@@ -1,3 +1,5 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { AddOutlined } from "@mui/icons-material";
 import {
   Button,
@@ -19,6 +21,7 @@ import { ModelDeleteDialog } from "./ModelDeleteDialog";
 import { ModelEditDialog } from "./ModelEditDialog";
 import { ModelTable } from "./ModelTable";
 import { useModels } from "./hooks";
+
 
 export function ModelListPage() {
   const selectedProjectId = useAppContextStore(
@@ -91,6 +94,7 @@ export function ModelListPage() {
   }
 
   return (
+    <ScreenWithActivity screen="models">
     <Stack spacing={3}>
       <AppBreadcrumbs items={[{ label: "Models" }]} />
       <Stack
@@ -111,13 +115,13 @@ export function ModelListPage() {
           </Typography>
         </Stack>
 
-        <Button
+        <PermissionGate permission="write"><Button
           variant="contained"
           startIcon={<AddOutlined />}
           onClick={() => setCreateOpen(true)}
         >
           Create Model
-        </Button>
+        </Button></PermissionGate>
       </Stack>
 
       {!data || data.length === 0 ? (
@@ -159,5 +163,6 @@ export function ModelListPage() {
         onClose={() => setDeleteModel(null)}
       />
     </Stack>
+      </ScreenWithActivity>
   );
 }

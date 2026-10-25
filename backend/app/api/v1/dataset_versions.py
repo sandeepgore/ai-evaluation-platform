@@ -1,9 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.dataset.dataset import Dataset
+from app.models.dataset_version.version import DatasetVersion
 from app.schemas.dataset_version import (
     DatasetVersionCreate,
     DatasetVersionResponse,
@@ -24,8 +26,11 @@ router = APIRouter(
 )
 async def create_dataset_version(
     data: DatasetVersionCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    dataset = await db.get(Dataset, data.dataset_id)
+    request.state.audit_context = {"dataset_name": dataset.name if dataset else None}
     service = DatasetVersionService(db)
 
     return await service.create(data)
@@ -63,8 +68,12 @@ async def get_dataset_version(
 )
 async def finalize_dataset_version(
     version_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    version = await db.get(DatasetVersion, version_id)
+    dataset = await db.get(Dataset, version.dataset_id) if version else None
+    request.state.audit_context = {"dataset_name": dataset.name if dataset else None}
     service = DatasetVersionService(db)
 
     return await service.finalize(version_id)
@@ -77,8 +86,12 @@ async def finalize_dataset_version(
 async def update_dataset_version(
     version_id: UUID,
     data: DatasetVersionUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    version = await db.get(DatasetVersion, version_id)
+    dataset = await db.get(Dataset, version.dataset_id) if version else None
+    request.state.audit_context = {"dataset_name": dataset.name if dataset else None}
     service = DatasetVersionService(db)
 
     return await service.update(version_id, data)
@@ -90,8 +103,12 @@ async def update_dataset_version(
 )
 async def delete_dataset_version(
     version_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    version = await db.get(DatasetVersion, version_id)
+    dataset = await db.get(Dataset, version.dataset_id) if version else None
+    request.state.audit_context = {"dataset_name": dataset.name if dataset else None}
     service = DatasetVersionService(db)
 
     await service.delete(version_id)

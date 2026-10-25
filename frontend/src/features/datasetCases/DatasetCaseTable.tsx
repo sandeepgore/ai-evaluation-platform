@@ -1,13 +1,9 @@
 import {
-  CheckCircleOutlined,
   DeleteOutlined,
   EditOutlined,
-  Remove,
   VisibilityOutlined,
 } from "@mui/icons-material";
 import {
-  Chip,
-  IconButton,
   Paper,
   Stack,
   Table,
@@ -16,7 +12,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -24,6 +19,8 @@ import {
   type SortDirection,
 } from "../../components/common/DataTableSortLabel";
 import type { DatasetCase } from "./api";
+import { StatusChip } from "../../components/common/StatusChip";
+import { TableActionButton } from "../../components/common/TableActionButton";
 
 type SortField =
   | "position"
@@ -184,53 +181,17 @@ export function DatasetCaseTable({
               {ready && (
                 <>
                   <TableCell>
-                    {datasetCase.has_reference ? (
-                      <Chip
-                        icon={<CheckCircleOutlined fontSize="small" />}
-                        label="Ready"
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                        sx={{ borderRadius: 1.5, fontWeight: 600 }}
-                      />
-                    ) : (
-                      <Chip
-                        icon={<Remove fontSize="small" />}
-                        label="None"
-                        size="small"
-                        variant="outlined"
-                        sx={{
-                          borderRadius: 1.5,
-                          color: "text.disabled",
-                          borderColor: "divider",
-                        }}
-                      />
-                    )}
+                    <StatusChip
+                      status={datasetCase.has_reference ? "ready" : "none"}
+                      label={datasetCase.has_reference ? "Ready" : "None"}
+                    />
                   </TableCell>
 
                   <TableCell>
-                    {datasetCase.has_context ? (
-                      <Chip
-                        icon={<CheckCircleOutlined fontSize="small" />}
-                        label="Ready"
-                        size="small"
-                        color="info"
-                        variant="outlined"
-                        sx={{ borderRadius: 1.5, fontWeight: 600 }}
-                      />
-                    ) : (
-                      <Chip
-                        icon={<Remove fontSize="small" />}
-                        label="None"
-                        size="small"
-                        variant="outlined"
-                        sx={{
-                          borderRadius: 1.5,
-                          color: "text.disabled",
-                          borderColor: "divider",
-                        }}
-                      />
-                    )}
+                    <StatusChip
+                      status={datasetCase.has_context ? "ready" : "none"}
+                      label={datasetCase.has_context ? "Ready" : "None"}
+                    />
                   </TableCell>
                 </>
               )}
@@ -241,43 +202,12 @@ export function DatasetCaseTable({
                   spacing={0.5}
                   sx={{ justifyContent: "flex-end", alignItems: "center" }}
                 >
-                  <Tooltip title="View case">
-                    <IconButton
-                      aria-label={`View case ${datasetCase.position + 1}`}
-                      onClick={() => onView(datasetCase)}
-                      size="small"
-                      color="primary"
-                      sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                    >
-                      <VisibilityOutlined fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+                  <TableActionButton label={`View case ${datasetCase.position + 1}`} icon={<VisibilityOutlined fontSize="small" />} onClick={() => onView(datasetCase)} />
 
                   {editable && (
                     <>
-                      <Tooltip title="Edit case">
-                        <IconButton
-                          aria-label={`Edit case ${datasetCase.position + 1}`}
-                          onClick={() => onEdit(datasetCase)}
-                          size="small"
-                          color="info"
-                        sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                        >
-                          <EditOutlined fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-
-                      <Tooltip title="Delete case">
-                        <IconButton
-                          aria-label={`Delete case ${datasetCase.position + 1}`}
-                          onClick={() => onDelete(datasetCase)}
-                          size="small"
-                          color="error"
-                        sx={{ borderRadius: 1.5, "&:hover": { bgcolor: "action.hover" } }}
-                        >
-                          <DeleteOutlined fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      <TableActionButton label={`Edit case ${datasetCase.position + 1}`} icon={<EditOutlined fontSize="small" />} onClick={() => onEdit(datasetCase)} />
+                      <TableActionButton label={`Delete case ${datasetCase.position + 1}`} icon={<DeleteOutlined fontSize="small" />} destructive onClick={() => onDelete(datasetCase)} />
                     </>
                   )}
                 </Stack>

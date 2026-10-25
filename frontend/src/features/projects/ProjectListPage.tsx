@@ -1,3 +1,5 @@
+import { ScreenWithActivity } from "../auditLogs/ScreenWithActivity";
+import { PermissionGate } from "../../components/common/PermissionGate";
 import { AddOutlined } from "@mui/icons-material";
 import {
   Button,
@@ -19,6 +21,7 @@ import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
 import { ProjectEditDialog } from "./ProjectEditDialog";
 import { ProjectTable } from "./ProjectTable";
 import { useProjects } from "./hooks";
+
 
 export function ProjectListPage() {
   const selectedOrganizationId = useAppContextStore(
@@ -91,6 +94,7 @@ export function ProjectListPage() {
   }
 
   return (
+    <ScreenWithActivity screen="projects">
     <Stack spacing={3}>
       <AppBreadcrumbs items={[{ label: "Projects" }]} />
       <Stack
@@ -111,13 +115,13 @@ export function ProjectListPage() {
           </Typography>
         </Stack>
 
-        <Button
+        <PermissionGate permission="write"><Button
           variant="contained"
           startIcon={<AddOutlined />}
           onClick={() => setCreateOpen(true)}
         >
           Create Project
-        </Button>
+        </Button></PermissionGate>
       </Stack>
 
       {!data || data.length === 0 ? (
@@ -159,5 +163,6 @@ export function ProjectListPage() {
         onClose={() => setDeleteProject(null)}
       />
     </Stack>
+      </ScreenWithActivity>
   );
 }

@@ -2,7 +2,6 @@ import { AddOutlined, SearchOutlined } from "@mui/icons-material";
 import {
   Box,
   Button,
-  Chip,
   InputAdornment,
   Paper,
   Stack,
@@ -12,6 +11,8 @@ import {
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { AppBreadcrumbs } from "../../components/common/AppBreadcrumbs";
+import { useAuthStore } from "../../store/authStore";
+import { StatusChip } from "../../components/common/StatusChip";
 import { DataTablePagination } from "../../components/common/DataTablePagination";
 import { EmptyState } from "../../components/common/EmptyState";
 import { ErrorState } from "../../components/common/ErrorState";
@@ -37,11 +38,13 @@ type SortDirection = "asc" | "desc";
 
 const DEFAULT_PAGE_SIZE = 25;
 
+
 export function DatasetCaseListPage() {
   const { datasetId, versionId } = useParams<{
     datasetId: string;
     versionId: string;
   }>();
+  const role = useAuthStore((state) => state.user?.role);
 
   const {
     data: version,
@@ -125,7 +128,7 @@ export function DatasetCaseListPage() {
     return <ErrorState message="Unable to load dataset cases." />;
   }
 
-  const editable = version.status === "draft";
+  const editable = version.status === "draft" && (role === "admin" || role === "dev");
   const ready = version.status === "ready";
 
   const totalCases = sortedCases.length;
@@ -157,12 +160,6 @@ export function DatasetCaseListPage() {
     setSearchQuery(event.target.value);
     setPage(0);
   };
-
-  const statusColorMap = {
-    draft: "warning",
-    ready: "success",
-    archived: "default",
-  } as const;
 
   return (
     <Stack spacing={3}>
@@ -199,12 +196,7 @@ export function DatasetCaseListPage() {
             <Typography variant="h5" sx={{ fontWeight: 700 }}>
               Evaluation Cases
             </Typography>
-            <Chip
-              label={version.status.toUpperCase()}
-              size="small"
-              color={statusColorMap[version.status] ?? "default"}
-              sx={{ fontWeight: 700, borderRadius: 1.5, fontSize: "0.7rem" }}
-            />
+            <StatusChip status={version.status} />
           </Stack>
 
           <Typography variant="body2" color="text.secondary">
